@@ -1,0 +1,45 @@
+{
+  "name": "arduino-flowchart",
+  "displayName": "Arduino Flowchart Visualizer",
+  "description": "Auto-generate flowcharts from Arduino code",
+  "publisher": "itaylaniado",  
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onLanguage:cpp",
+    "onLanguage:arduino"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "test": "vscode-test"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "arduinoFlowchart.show",
+        "title": "Show Flowchart",
+        "category": "Arduino"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "arduinoFlowchart.show",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "web-tree-sitter": "^0.20.8"
+  },
+  "devDependencies": {
+    "@vscode/test-cli": "latest",
+    "@vscode/test-electron": "latest"
+  }
+}
