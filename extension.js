@@ -269,6 +269,7 @@ function getWebviewContent() {
                     if(svgElement) {
                         svgElement.style.height = "100%";
                         svgElement.style.width = "100%";
+                        svgElement.style.maxWidth = "none";
                         
                         panZoom = svgPanZoom(svgElement, { 
                             zoomEnabled: true, controlIconsEnabled: false, fit: true, center: true, minZoom: 0.1, maxZoom: 10,
