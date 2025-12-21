@@ -3,6 +3,7 @@
   "displayName": "Arduino Flowchart Visualizer",
   "description": "Auto-generate flowcharts from Arduino code",
   "publisher": "itaylaniado",  
+  "repository": "https://github.com/itaylaniado/arduino-flowchart-extension",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.70.0"
