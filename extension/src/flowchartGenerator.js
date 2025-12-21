@@ -10,12 +10,10 @@ async function initParser(wasmPath) {
 }
 
 function generateMermaidCode(code) {
-    if (!parser) return 'graph TD\nError["Parser not initialized"]';
+    if (!parser) return { graph: 'graph TD\nError["Parser not initialized"]', mapping: {} };
 
     try {
-        // פיצול הקוד לשורות כדי שנוכל לשלוף הערות מותאמות אישית
-        const sourceLines = code.split('\n');
-        
+        const sourceLines = code.split(/\r?\n/);
         const cleanCode = code.replace(/\u00A0/g, ' ');
         const tree = parser.parse(cleanCode);
         const root = tree.rootNode;
@@ -34,51 +32,44 @@ function generateMermaidCode(code) {
 
         let graph = 'graph TD\n';
         graph += 'classDef startEnd fill:#252526,stroke:#fff,stroke-width:2px,color:#fff;\n';
-        graph += 'classDef activeNode fill:#ffff00,stroke:#000000,stroke-width:3px;\n'; // עיצוב ללחיצה
+        graph += 'classDef activeNode fill:#ffff00,stroke:#000000,stroke-width:3px;\n';
+        graph += 'classDef loopHex fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000;\n';
+        
         graph += 'GlobalStart((Start)):::startEnd --> setup_Start\n';
 
-        // רשימה לאגירת אירועי לחיצה (כדי להוסיף אותם בסוף הגרף)
         let clickEvents = [];
+        let lineMapping = {}; 
 
-        // --- פונקציית עזר לחילוץ תווית (Custom Label) ---
+        function registerMapping(id, startLine, endLine) {
+            clickEvents.push(`click ${id} call jumpToLine(${startLine + 1})`);
+            for (let i = startLine; i <= endLine; i++) {
+                lineMapping[i] = id;
+            }
+        }
+
         function getLabel(node, fallbackType) {
             const lineIndex = node.startPosition.row;
             const originalLine = sourceLines[lineIndex] || "";
-            
-            // 1. בדיקה אם יש הערת קסם //\\
-            const magicCommentMatch = originalLine.match(/\/\/\\\s*(.+)$/);
-            if (magicCommentMatch) {
-                // ניקוי תווים שיכולים לשבור את Mermaid
-                return sanitize(magicCommentMatch[1].trim());
+            const magicMatch = originalLine.match(/\/\/\\\s*(.*)$/);
+            if (magicMatch && magicMatch[1]) {
+                return sanitize(magicMatch[1].trim());
             }
-
-            // 2. אם אין, לוקחים את הקוד הרגיל
             let rawText = node.text.split('\n')[0].trim().replace(/;/g, '');
             let label = sanitize(rawText.substring(0, 40));
-            
-            // 3. אם הקוד קצר מדי או לא ברור
             if (!label || label.length < 2) label = fallbackType || node.type;
-            
             return label;
         }
 
-        // --- פונקציית רישום לחיצה ---
-        function registerClick(id, line) {
-            // Mermaid syntax: click NodeID call jumpToLine(lineNumber)
-            // שים לב: אנחנו מוסיפים 1 לשורה כי VS Code מתחיל מ-1 בממשק, אבל הקוד מצפה ל-0 לרוב. 
-            // נשלח 0-based ונתקן בצד השני אם צריך. נשלח כאן את השורה המדויקת.
-            clickEvents.push(`click ${id} call jumpToLine(${line})`);
-        }
-
-        // --- מנוע רקורסיבי ---
         function processBlock(node, incomingIds, edgeLabel = null) {
             if (!node) return incomingIds;
+
+            const startLine = node.startPosition.row;
+            const endLine = node.endPosition.row;
 
             if (node.type === 'ERROR') {
                 const id = `N${node.id}`;
                 graph += `${id}["Syntax Error"]\n`;
-                registerClick(id, node.startPosition.row);
-                
+                registerMapping(id, startLine, endLine);
                 incomingIds.forEach(prev => {
                     if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${id}\n`;
                     else graph += `${prev} --> ${id}\n`;
@@ -88,14 +79,21 @@ function generateMermaidCode(code) {
 
             if (node.type === 'compound_statement') {
                 let currentIds = incomingIds;
-                let isFirstChild = true;
+                let nextEdgeLabel = edgeLabel;
+
                 for (let i = 0; i < node.childCount; i++) {
                     const child = node.child(i);
-                    const label = isFirstChild ? edgeLabel : null;
-                    const nextIds = processBlock(child, currentIds, label);
-                    if (nextIds.length > 0 && nextIds[0] !== currentIds[0]) {
+                    if (['{', '}', ';', 'comment'].includes(child.type)) continue;
+
+                    const nextIds = processBlock(child, currentIds, nextEdgeLabel);
+                    
+                    if (nextIds.length > 0) {
                         currentIds = nextIds;
-                        isFirstChild = false;
+                        if (['for_statement', 'while_statement'].includes(child.type)) {
+                            nextEdgeLabel = "False";
+                        } else {
+                            nextEdgeLabel = null;
+                        }
                     }
                 }
                 return currentIds;
@@ -104,103 +102,127 @@ function generateMermaidCode(code) {
             if (['{', '}', ';', 'comment'].includes(node.type)) return incomingIds;
 
             const id = `N${node.id}`;
-            const line = node.startPosition.row;
 
-            // --- For Loop ---
+            // --- For Loop (TIKUN: Subgraph Isolation) ---
             if (node.type === 'for_statement') {
                 const initNode = node.childForFieldName('initializer');
                 const condNode = node.childForFieldName('condition');
                 const updateNode = node.childForFieldName('update');
                 const bodyNode = node.childForFieldName('body');
 
-                let currentIds = incomingIds;
+                // 1. חישוב נקודת הכניסה ללולאה
+                let entryId;
+                if (initNode) entryId = `N${initNode.id}`;
+                else if (condNode) entryId = `N${condNode.id}`;
+                else entryId = `N${node.id}_COND`;
 
+                // 2. TIKUN: יצירת החיבורים הנכנסים *לפני* פתיחת ה-Subgraph
+                // זה מונע מהצמתים הקודמים "להישאב" לתוך ה-Subgraph הנוכחי
+                incomingIds.forEach(prev => {
+                    if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${entryId}\n`;
+                    else graph += `${prev} --> ${entryId}\n`;
+                });
+                
+                // הבלוקים הפנימיים לא צריכים לטפל בחיבור הנכנס הזה יותר
+                let currentIds = [entryId]; 
+
+                // 3. פתיחת ה-Subgraph
+                const loopScopeId = `LoopScope_${node.id}`;
+                const customLabel = getLabel(node, "Loop");
+                const scopeTitle = customLabel !== "Loop" && !customLabel.startsWith("for") ? customLabel : "For Loop";
+                
+                graph += `subgraph ${loopScopeId} [${scopeTitle}]\n`;
+
+                // 4. אתחול (אם קיים)
                 if (initNode) {
-                    currentIds = processBlock(initNode, currentIds, edgeLabel);
-                    edgeLabel = null;
+                    const initLabel = sanitize(initNode.text.replace(/;/g, ''));
+                    graph += `${entryId}["${initLabel}"]\n`; // entryId == initId
+                    registerMapping(entryId, initNode.startPosition.row, initNode.endPosition.row);
+                    
+                    // אנו מעדכנים את currentIds כדי שיתחבר לתנאי, אבל לא מציירים חץ נכנס כי הוא צויר בשלב 2
                 }
 
+                // 5. תנאי
                 const condId = condNode ? `N${condNode.id}` : `N${node.id}_COND`;
-                // שימוש ב-getLabel כדי לתמוך ב-//\\ גם בלולאות
-                const customLabel = getLabel(node, "Loop"); 
-                // אם המשתמש שם תווית על ה-For, נציג אותה במעוין. אחרת נציג את התנאי.
-                const displayLabel = customLabel !== "Loop" && !customLabel.startsWith("for") ? customLabel : (condNode ? sanitize(condNode.text) : "Loop");
-
-                graph += `${condId}{"${displayLabel}?"}\n`;
-                registerClick(condId, line);
+                const condText = condNode ? sanitize(condNode.text) : "true";
                 
-                currentIds.forEach(prev => graph += `${prev} --> ${condId}\n`);
-
+                graph += `${condId}{{ "${condText}?" }}:::loopHex\n`;
+                registerMapping(condId, startLine, endLine);
+                
+                // חיבור פנימי (מאתחול לתנאי, או אם אין אתחול אז זה הכניסה)
+                if (initNode) {
+                    graph += `${entryId} --> ${condId}\n`;
+                }
+                
+                // 6. גוף הלולאה
                 const bodyEnds = processBlock(bodyNode, [condId], "True");
 
+                // 7. עדכון
                 let updateEnds = bodyEnds;
                 if (updateNode) {
                     const upId = `N${updateNode.id}`;
                     graph += `${upId}["${sanitize(updateNode.text)}"]\n`;
-                    // אין צורך בקליק על ה-Update בנפרד בדרך כלל, אבל אפשר
+                    registerMapping(upId, updateNode.startPosition.row, updateNode.endPosition.row);
                     
                     bodyEnds.forEach(prev => graph += `${prev} --> ${upId}\n`);
                     updateEnds = [upId];
                 }
 
+                // 8. חזרה לתנאי
                 updateEnds.forEach(prev => graph += `${prev} --> ${condId}\n`);
+
+                graph += `end\n`; // סיום Subgraph
+
                 return [condId];
             }
 
-            // --- While / If ---
-            // לוגיקה דומה: משתמשים ב-getLabel כדי לבדוק אם יש הערה מיוחדת
+            // --- While Loop ---
             if (node.type === 'while_statement') {
                 const condNode = node.child(1);
                 const bodyNode = node.child(2);
-                
                 const condId = `N${condNode.id}`;
-                const rawLabel = getLabel(node); // בדיקה בשורת ה-while
-                // אם המשתמש לא נתן הערה, נשתמש בתנאי
-                const label = rawLabel.includes("while") ? sanitize(condNode.text) : rawLabel;
+                const customLabel = getLabel(node, "");
+                const label = (customLabel && !customLabel.includes("while")) ? customLabel : sanitize(condNode.text);
 
-                graph += `${condId}{"${label}?"}\n`;
-                registerClick(condId, line);
+                graph += `${condId}{{"${label}?"}}:::loopHex\n`;
+                registerMapping(condId, startLine, endLine);
                 
                 incomingIds.forEach(prev => {
                     if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${condId}\n`;
                     else graph += `${prev} --> ${condId}\n`;
                 });
-                edgeLabel = null;
-
+                
                 const bodyEnds = processBlock(bodyNode, [condId], "True");
                 bodyEnds.forEach(end => graph += `${end} --> ${condId}\n`);
+                
                 return [condId]; 
             }
 
+            // --- If Statement ---
             if (node.type === 'if_statement') {
                 const condNode = node.child(1);
                 const thenNode = node.child(2);
                 const elseNode = node.childCount > 3 ? node.child(3).child(1) : null;
-
                 const ifId = `N${condNode.id}`;
-                const rawLabel = getLabel(node);
-                const label = rawLabel.includes("if") ? sanitize(condNode.text) : rawLabel;
+                const customLabel = getLabel(node, "");
+                const label = (customLabel && !customLabel.includes("if")) ? customLabel : sanitize(condNode.text);
 
                 graph += `${ifId}{"${label}?"}\n`;
-                registerClick(ifId, line);
+                registerMapping(ifId, startLine, endLine);
                 
                 incomingIds.forEach(prev => {
                     if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${ifId}\n`;
                     else graph += `${prev} --> ${ifId}\n`;
                 });
-                edgeLabel = null;
-
+                
                 const thenEnds = processBlock(thenNode, [ifId], "Yes");
                 const elseEnds = elseNode ? processBlock(elseNode, [ifId], "No") : [ifId];
                 
                 return [...thenEnds, ...elseEnds];
             }
 
-            // --- Normal Statement ---
             let label = getLabel(node);
-            
             let shapeL = '[', shapeR = ']';
-            // אם זו קריאה לפונקציה
             if (node.type === 'expression_statement' && node.child(0).type === 'call_expression') {
                 const funcName = node.child(0).child(0).text;
                 if (!['digitalWrite', 'analogWrite', 'delay', 'Serial.println', 'random'].includes(funcName)) {
@@ -209,7 +231,7 @@ function generateMermaidCode(code) {
             }
 
             graph += `${id}${shapeL}"${label}"${shapeR}\n`;
-            registerClick(id, line);
+            registerMapping(id, startLine, endLine);
 
             incomingIds.forEach(prev => {
                 if (prev !== id) {
@@ -217,25 +239,32 @@ function generateMermaidCode(code) {
                     else graph += `${prev} --> ${id}\n`;
                 }
             });
-
             return [id];
         }
 
-        // --- Build Graph ---
         functions.forEach(func => {
             const funcName = func.name;
             graph += `subgraph ${funcName}_Scope [${funcName}]\n`;
-            
             const startNode = `${funcName}_Start`;
             graph += `${startNode}((${funcName})):::startEnd\n`;
-            registerClick(startNode, func.body.startPosition.row);
+            registerMapping(startNode, func.body.startPosition.row, func.body.endPosition.row);
             
             const ends = processBlock(func.body, [startNode]);
             
+            let endEdgeLabel = null;
+            const lastChild = func.body.lastNamedChild;
+            if (lastChild && ['for_statement', 'while_statement'].includes(lastChild.type)) {
+                endEdgeLabel = "False";
+            }
+
             const endNode = `${funcName}_End`;
             graph += `${endNode}(((End))):::startEnd\n`;
             
-            ends.forEach(e => graph += `${e} --> ${endNode}\n`);
+            ends.forEach(e => {
+                if (endEdgeLabel) graph += `${e} -->|${endEdgeLabel}| ${endNode}\n`;
+                else graph += `${e} --> ${endNode}\n`;
+            });
+            
             graph += `end\n`;
         });
 
@@ -244,19 +273,17 @@ function generateMermaidCode(code) {
             graph += `loop_End --> loop_Start\n`;
         }
 
-        // --- הוספת האירועים בסוף הגרף ---
         graph += '\n' + clickEvents.join('\n');
-
-        return graph;
+        return { graph, mapping: lineMapping };
 
     } catch (e) {
-        return `graph TD\nError["Error: ${e.message}"]`;
+        return { graph: `graph TD\nError["Error: ${e.message}"]`, mapping: {} };
     }
 }
 
 function sanitize(text) {
     if (!text) return "";
-    return text.replace(/"/g, "'").replace(/\n/g, ' ');
+    return text.replace(/"/g, "'").replace(/[\r\n]+/g, ' ');
 }
 
 module.exports = { initParser, generateMermaidCode };
