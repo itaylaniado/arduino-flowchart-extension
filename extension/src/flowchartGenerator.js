@@ -42,7 +42,8 @@ function generateMermaidCode(code) {
 
         function registerMapping(id, startLine, endLine) {
             clickEvents.push(`click ${id} call jumpToLine(${startLine + 1})`);
-            for (let i = startLine; i <= endLine; i++) {
+            const end = endLine !== undefined ? endLine : startLine;
+            for (let i = startLine; i <= end; i++) {
                 lineMapping[i] = id;
             }
         }
@@ -103,7 +104,7 @@ function generateMermaidCode(code) {
 
             const id = `N${node.id}`;
 
-            // --- For Loop (TIKUN: Subgraph Isolation) ---
+            // --- For Loop ---
             if (node.type === 'for_statement') {
                 const initNode = node.childForFieldName('initializer');
                 const condNode = node.childForFieldName('condition');
@@ -116,59 +117,54 @@ function generateMermaidCode(code) {
                 else if (condNode) entryId = `N${condNode.id}`;
                 else entryId = `N${node.id}_COND`;
 
-                // 2. TIKUN: יצירת החיבורים הנכנסים *לפני* פתיחת ה-Subgraph
-                // זה מונע מהצמתים הקודמים "להישאב" לתוך ה-Subgraph הנוכחי
-                incomingIds.forEach(prev => {
-                    if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${entryId}\n`;
-                    else graph += `${prev} --> ${entryId}\n`;
-                });
-                
-                // הבלוקים הפנימיים לא צריכים לטפל בחיבור הנכנס הזה יותר
-                let currentIds = [entryId]; 
-
-                // 3. פתיחת ה-Subgraph
+                // 2. פתיחת ה-Subgraph
                 const loopScopeId = `LoopScope_${node.id}`;
                 const customLabel = getLabel(node, "Loop");
                 const scopeTitle = customLabel !== "Loop" && !customLabel.startsWith("for") ? customLabel : "For Loop";
                 
                 graph += `subgraph ${loopScopeId} [${scopeTitle}]\n`;
 
-                // 4. אתחול (אם קיים)
+                // 3. הגדרת צומת הכניסה וחיבור החצים הנכנסים *בתוך* ה-Subgraph
+                // זה התיקון הקריטי למניעת קריסת Mermaid
                 if (initNode) {
                     const initLabel = sanitize(initNode.text.replace(/;/g, ''));
-                    graph += `${entryId}["${initLabel}"]\n`; // entryId == initId
+                    graph += `${entryId}["${initLabel}"]\n`; 
                     registerMapping(entryId, initNode.startPosition.row, initNode.endPosition.row);
-                    
-                    // אנו מעדכנים את currentIds כדי שיתחבר לתנאי, אבל לא מציירים חץ נכנס כי הוא צויר בשלב 2
+                } else {
+                    // אם אין אתחול, הכניסה היא התנאי - נגדיר אותו מיד בהמשך, החיבור ייעשה אליו
                 }
 
-                // 5. תנאי
+                // כעת בטוח לחבר את החצים מבחוץ פנימה
+                incomingIds.forEach(prev => {
+                    if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${entryId}\n`;
+                    else graph += `${prev} --> ${entryId}\n`;
+                });
+
+                // 4. תנאי
                 const condId = condNode ? `N${condNode.id}` : `N${node.id}_COND`;
                 const condText = condNode ? sanitize(condNode.text) : "true";
                 
-                graph += `${condId}{{ "${condText}?" }}:::loopHex\n`;
-                registerMapping(condId, startLine, endLine);
+                graph += `${condId}{{"${condText}?"}}:::loopHex\n`;
+                registerMapping(condId, startLine); // מיפוי רק לשורת הכותרת
                 
-                // חיבור פנימי (מאתחול לתנאי, או אם אין אתחול אז זה הכניסה)
                 if (initNode) {
                     graph += `${entryId} --> ${condId}\n`;
                 }
                 
-                // 6. גוף הלולאה
+                // 5. גוף הלולאה
                 const bodyEnds = processBlock(bodyNode, [condId], "True");
 
-                // 7. עדכון
+                // 6. עדכון
                 let updateEnds = bodyEnds;
                 if (updateNode) {
                     const upId = `N${updateNode.id}`;
                     graph += `${upId}["${sanitize(updateNode.text)}"]\n`;
                     registerMapping(upId, updateNode.startPosition.row, updateNode.endPosition.row);
-                    
                     bodyEnds.forEach(prev => graph += `${prev} --> ${upId}\n`);
                     updateEnds = [upId];
                 }
 
-                // 8. חזרה לתנאי
+                // 7. חזרה לתנאי
                 updateEnds.forEach(prev => graph += `${prev} --> ${condId}\n`);
 
                 graph += `end\n`; // סיום Subgraph
@@ -185,7 +181,7 @@ function generateMermaidCode(code) {
                 const label = (customLabel && !customLabel.includes("while")) ? customLabel : sanitize(condNode.text);
 
                 graph += `${condId}{{"${label}?"}}:::loopHex\n`;
-                registerMapping(condId, startLine, endLine);
+                registerMapping(condId, startLine);
                 
                 incomingIds.forEach(prev => {
                     if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${condId}\n`;
@@ -208,7 +204,7 @@ function generateMermaidCode(code) {
                 const label = (customLabel && !customLabel.includes("if")) ? customLabel : sanitize(condNode.text);
 
                 graph += `${ifId}{"${label}?"}\n`;
-                registerMapping(ifId, startLine, endLine);
+                registerMapping(ifId, startLine);
                 
                 incomingIds.forEach(prev => {
                     if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${ifId}\n`;
@@ -247,7 +243,7 @@ function generateMermaidCode(code) {
             graph += `subgraph ${funcName}_Scope [${funcName}]\n`;
             const startNode = `${funcName}_Start`;
             graph += `${startNode}((${funcName})):::startEnd\n`;
-            registerMapping(startNode, func.body.startPosition.row, func.body.endPosition.row);
+            registerMapping(startNode, func.body.startPosition.row);
             
             const ends = processBlock(func.body, [startNode]);
             

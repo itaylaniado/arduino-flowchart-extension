@@ -56,7 +56,7 @@ async function activate(context) {
         }
     }, null, context.subscriptions);
 
-    // --- פיצ'ר חדש: שמירת Markdown בעת שמירת הקובץ ---
+    // פיצ'ר שמירת Markdown בעת שמירת הקובץ
     vscode.workspace.onDidSaveTextDocument(document => {
         if (document.languageId === 'cpp' || document.languageId === 'arduino' || document.languageId === 'c') {
             saveMarkdownFile(document);
@@ -80,15 +80,12 @@ async function activate(context) {
     }, null, context.subscriptions);
 }
 
-// --- פונקציה לשמירת קובץ Markdown ---
+// פונקציה לשמירת קובץ Markdown
 function saveMarkdownFile(document) {
     const code = document.getText();
-    
-    // שליפת הגרף בלבד (ללא המיפוי)
     const result = generateMermaidCode(code); 
     
-    // יצירת תוכן הקובץ
-    const mdContent = `# Flowchart: ${path.basename(document.fileName)}\n\nAuto-generated flowchart based on source code.\n\n\`\`\`mermaid\n${result.graph}\n\`\`\`\n`;
+    const mdContent = `# Flowchart: ${path.basename(document.fileName)}\n\nAuto-generated flowchart based on source code.\n\n\`\`\`mermaid\n---\nconfig:\n  theme: 'base'\n  themeVariables:\n    primaryColor: '#fff'\n    primaryTextColor: '#2b2b2f'\n    primaryBorderColor: '#000'\n    lineColor: '#2b2b2f'\n    secondaryColor: '#fff'\n    tertiaryColor: '#fff'\n---\n${result.graph}\n\`\`\`\n`;
     
     const dir = path.dirname(document.fileName);
     const mdPath = path.join(dir, 'flowchart.md');
@@ -97,8 +94,6 @@ function saveMarkdownFile(document) {
         if (err) {
             console.error('Error saving flowchart.md:', err);
         }
-        // אופציונלי: הודעה למשתמש (כרגע מושתק כדי לא להציק בכל שמירה)
-        // vscode.window.showInformationMessage('flowchart.md updated');
     });
 }
 
@@ -296,19 +291,55 @@ function getWebviewContent() {
                 const nodeRect = node.getBoundingClientRect();
                 const containerRect = document.getElementById('graphDiv').getBoundingClientRect();
 
+                // אזור מת (Dead Zone): אם האלמנט במרכז (30% מהמסך), לא מזיזים
+                const safeZoneH = containerRect.height * 0.3; 
+                const safeZoneW = containerRect.width * 0.3;  
+                
+                const centerX = containerRect.left + containerRect.width / 2;
+                const centerY = containerRect.top + containerRect.height / 2;
+                
                 const nodeCenterX = nodeRect.left + nodeRect.width / 2;
                 const nodeCenterY = nodeRect.top + nodeRect.height / 2;
 
-                const containerCenterX = containerRect.left + containerRect.width / 2;
-                const containerCenterY = containerRect.top + containerRect.height / 2;
+                if (Math.abs(nodeCenterX - centerX) < safeZoneW && 
+                    Math.abs(nodeCenterY - centerY) < safeZoneH) {
+                    savedPan = panZoom.getPan();
+                    isUserPanning = true;
+                    return; // אין צורך להזיז
+                }
 
-                const diffX = containerCenterX - nodeCenterX;
-                const diffY = containerCenterY - nodeCenterY;
+                const diffX = centerX - nodeCenterX;
+                const diffY = centerY - nodeCenterY;
+                const currentPan = panZoom.getPan();
+                const targetPan = { x: currentPan.x + diffX, y: currentPan.y + diffY };
 
-                panZoom.panBy({x: diffX, y: diffY});
+                // הפעלת אנימציה במקום קפיצה
+                animatePan(currentPan, targetPan, 300);
+            }
 
-                savedPan = panZoom.getPan();
-                isUserPanning = true;
+            function animatePan(start, end, duration) {
+                const startTime = performance.now();
+
+                function step(currentTime) {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    // פונקציית Ease-Out לתנועה טבעית
+                    const ease = 1 - Math.pow(1 - progress, 3);
+
+                    const newX = start.x + (end.x - start.x) * ease;
+                    const newY = start.y + (end.y - start.y) * ease;
+
+                    panZoom.pan({x: newX, y: newY});
+
+                    if (progress < 1) {
+                        requestAnimationFrame(step);
+                    } else {
+                        savedPan = panZoom.getPan();
+                        isUserPanning = true;
+                    }
+                }
+                
+                requestAnimationFrame(step);
             }
 
             function exportSVG() {
