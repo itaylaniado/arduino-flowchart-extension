@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TXP_Flowchart: txp2026_SimonGame.ino</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Consolas', 'Monaco', monospace; 
+            background: #1e1e1e; 
+            color: #d4d4d4;
+            overflow: hidden;
+        }
+        #container { display: grid; grid-template-columns: 1fr 1fr; height: 100vh; gap: 0; }
+        #codePanel { background: #1e1e1e; overflow-y: auto; border-right: 2px solid #333; position: relative; }
+        #codeHeader { position: sticky; top: 0; background: #252526; padding: 12px 15px; border-bottom: 1px solid #333; font-weight: bold; color: #cccccc; z-index: 10; }
+        #codeContent { padding: 0; counter-reset: line; }
+        .code-line { padding: 0 15px 0 60px; position: relative; cursor: pointer; transition: background 0.15s; white-space: pre; font-size: 13px; line-height: 20px; display: flex; align-items: center; }
+        .code-line:hover { background: #2a2d2e; }
+        .code-line::before { counter-increment: line; content: counter(line); position: absolute; left: 15px; width: 35px; text-align: right; color: #858585; user-select: none; }
+        .code-line.highlight { background: #264f78 !important; border-left: 3px solid #0667b6; }
+        .code-line code { flex: 1; }
+        
+        #flowchartPanel { background: #fff; display: flex; flex-direction: column; border-left: 1px solid #ccc; }
+        #chartHeader { background: #eee; padding: 12px 15px; border-bottom: 1px solid #ccc; font-weight: bold; color: #333; display: flex; gap: 10px; align-items: center; }
+        button { background: #0e639c; color: white; border: none; padding: 6px 12px; cursor: pointer; border-radius: 2px; font-size: 12px; transition: background 0.2s; }
+        button:hover { background: #1177bb; }
+        #graphDiv { flex: 1; overflow: hidden; background: #fff; cursor: grab; position: relative; }
+        #graphDiv:active { cursor: grabbing; }
+        #mermaidSvg .cluster rect {rx: 20px !important; ry: 20px !important; fill:#f9f9f9 !important;}
+        
+        .node { cursor: pointer !important; }
+        
+        /* Highlighting for exported file */
+        .highlight-node rect, .highlight-node circle, .highlight-node polygon, .highlight-node path {
+            stroke: #008184 !important;
+            stroke-width: 2px !important;
+            filter: drop-shadow(0 0 4px #008184b8);
+        }
+        
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #424242; }
+        ::-webkit-scrollbar-thumb:hover { background: #4e4e4e; }
+        .hljs { background: transparent; padding: 0; }
+        
+        @media print { 
+            #codePanel { display: none; } 
+            #container { grid-template-columns: 1fr; } 
+            #chartHeader { display: none; } 
+            body { background: white; color: black; } 
+            #graphDiv { background: white; } 
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="codePanel">
+            <div id="codeHeader">Source Code - txp2026_SimonGame.ino</div>
+            <div id="codeContent"></div>
+        </div>
+        <div id="flowchartPanel">
+            <div id="chartHeader">
+                <span>TXP_Flowchart</span>
+                <button onclick="resetZoom()">Reset Zoom</button>
+                <button onclick="window.print()">Print Flowchart</button>
+            </div>
+            <div id="graphDiv" class="mermaid">---
+config:
+  fontFamily: Heebo
+  layout: elk
+  elk:
+    mergeEdges:true
+    cycleBreakingStrategy:DEPTH_FIRST
+    mergeEdges:true
+    nodePlacementStrategy:NETWORK_SIMPLEX
+---
+flowchart TD
+classDef startEnd stroke-width:2px;
+classDef activeNode stroke-width:2px;
+classDef loopHex stroke-width:1.5px;
+GlobalStart((Start)):::startEnd --> setup_Start
+subgraph resetGame_Scope [resetGame]
+resetGame_Start([resetGame]):::startEnd
+N3784584("מחזיר את <br/>sequenceLength<br/> למצב 'לפני התחלה'")
+resetGame_Start --> N3784584
+N3785048("מתחילים ציפייה מהצעד הראשון")
+N3784584 --> N3785048
+N3785616("לא בתור שחקן")
+N3785048 --> N3785616
+N3786184("אין לחיצה")
+N3785616 --> N3786184
+subgraph LoopScope_3789024 [כיבוי כל הלדים]
+N3787576["int i = 0"]
+N3786184 --> N3787576
+N3787304{{"i < 4?"}}:::loopHex
+N3787576 --> N3787304
+N3788816("כיבוי כל הלדים")
+N3787304 -->|True| N3788816
+N3787488["i++"]
+N3788816 --> N3787488
+N3787488 --> N3787304
+end
+N3789216(["כיבוי צליל"])
+N3787304 -->|False| N3789216
+resetGame_End(((End))):::startEnd
+N3789216 --> resetGame_End
+end
+subgraph checkButtons_Scope [checkButtons]
+checkButtons_Start([checkButtons]):::startEnd
+N3792488("איפוס: כרגע אין לחיצה")
+checkButtons_Start --> N3792488
+subgraph LoopScope_3806032 [סריקת 4 הכפתורים]
+N3793776["int j = 0"]
+N3792488 --> N3793776
+N3793504{{"j < 4?"}}:::loopHex
+N3793776 --> N3793504
+N3805608("קריאת מצב הכפתור (LOW = לחוץ ב-PULLUP)")
+N3793504 -->|True| N3805608
+N3805424{"נמצא כפתור לחוץ?"}
+N3805608 --> N3805424
+N3796232("דיבאונס + מניעת 'לחיצה מתמשכת'")
+N3805424 -->|Yes| N3796232
+N3804640{"אימות שהלחיצה אמיתית גם אחרי הדיליי?"}
+N3796232 --> N3804640
+N3798680(["הדפס שם הצבע"])
+N3804640 -->|Yes| N3798680
+N3799712("הדפס הודעת לחיצה")
+N3798680 --> N3799712
+N3800280("שמירת אינדקס הכפתור שנלחץ")
+N3799712 --> N3800280
+N3802568{{"לחכות לשחרור הכפתור כדי שלא ייספר כמה פעמים?"}}:::loopHex
+N3800280 --> N3802568
+N3802264("השהיה קצרה בזמן שמחזיקים לחוץ")
+N3802568 -->|True| N3802264
+N3802264 --> N3802568
+N3802856(["פידבק מיידי לשחקן (לד+טון) על הלחיצה"])
+N3802568 -->|False| N3802856
+N3804232("דיבאונס לשחרור  (מקטין קפיצות אחרי release)")
+N3802856 --> N3804232
+N3805024["אחרי שמצאנו לחיצה אחת - מפסיקים סריקה"]
+N3804232 --> N3805024
+N3804640 --> N3805024
+N3793688["j++"]
+N3805424 --> N3793688
+N3793688 --> N3793504
+end
+checkButtons_End(((End))):::startEnd
+N3793504 --> checkButtons_End
+end
+subgraph addRandomColor_Scope [addRandomColor]
+addRandomColor_Start([addRandomColor]):::startEnd
+N3809824{"הגנה: לא לעבור את גודל המערך?"}
+addRandomColor_Start --> N3809824
+N3808576("הודעת מצב")
+N3809824 -->|Yes| N3808576
+N3808664(["איפוס משחק"])
+N3808576 --> N3808664
+N3809416["יציאה מהפונקציה"]
+N3808664 --> N3809416
+N3809416 --> addRandomColor_End
+N3811144("בחירת צבע רנדומלי 0..3")
+N3809824 --> N3811144
+N3812544("הוספת הצבע לסוף הרצף")
+N3811144 --> N3812544
+N3811672("הגדלת אורך הרצף")
+N3812544 --> N3811672
+N3815016("הדפס הצבע שנוסף")
+N3811672 --> N3815016
+addRandomColor_End(((End))):::startEnd
+N3815016 --> addRandomColor_End
+end
+subgraph playCompleteSequence_Scope [playCompleteSequence]
+playCompleteSequence_Start([playCompleteSequence]):::startEnd
+N3817096("Serial.println('Playing Complete Sequenc")
+playCompleteSequence_Start --> N3817096
+subgraph LoopScope_3823408 [לולאה על כל הצעדים ברצף]
+N3820464["int i = 0"]
+N3817096 --> N3820464
+N3820192{{"i < sequenceLength?"}}:::loopHex
+N3820464 --> N3820192
+N3822048("הצבע הנוכחי מהרצף")
+N3820192 -->|True| N3822048
+N3821512(["ניגון צבע יחיד (לד+טון)"])
+N3822048 --> N3821512
+N3822888("זמן המתנה בין צבעים")
+N3821512 --> N3822888
+N3820376["i++"]
+N3822888 --> N3820376
+N3820376 --> N3820192
+end
+N3823976("מתחילים בדיקה מהתחלה (הצעד הראשון ברצף)")
+N3820192 -->|False| N3823976
+N3824536("עכשיו תור השחקן")
+N3823976 --> N3824536
+playCompleteSequence_End(((End))):::startEnd
+N3824536 --> playCompleteSequence_End
+end
+subgraph playSingleColor_Scope [playSingleColor]
+playSingleColor_Start([playSingleColor]):::startEnd
+N3827168("Serial.println(colorNames[currenColor])")
+playSingleColor_Start --> N3827168
+N3827256("הדלקת הלד של הצבע")
+N3827168 --> N3827256
+N3827520(["הפעלת טון לפי הצבע"])
+N3827256 --> N3827520
+N3830592("משך הצגת הצבע")
+N3827520 --> N3830592
+N3830784("כיבוי הלד")
+N3830592 --> N3830784
+N3831048(["כיבוי הטון"])
+N3830784 --> N3831048
+playSingleColor_End(((End))):::startEnd
+N3831048 --> playSingleColor_End
+end
+subgraph gameOver_Scope [gameOver]
+gameOver_Start([gameOver]):::startEnd
+N3834856("הודעת סיום משחק")
+gameOver_Start --> N3834856
+N3836432("חישוב מספר איברים במערך הטונים")
+N3834856 --> N3836432
+subgraph LoopScope_3844520 [לולאה על רצף ה-Game Over]
+N3838296["int i = 0"]
+N3836432 --> N3838296
+N3838024{{"i < n?"}}:::loopHex
+N3838296 --> N3838024
+N3840040("סיבוב בין 4 לדים")
+N3838024 -->|True| N3840040
+N3839248("הדלקת לד")
+N3840040 --> N3839248
+N3839512(["ניגון טון ה-Game Over הנוכחי"])
+N3839248 --> N3839512
+N3842584("משך כל טון/פלאש")
+N3839512 --> N3842584
+N3842776("כיבוי לד")
+N3842584 --> N3842776
+N3838208["i++"]
+N3842776 --> N3838208
+N3838208 --> N3838024
+end
+N3844712(["כיבוי הטון בסוף"])
+N3838024 -->|False| N3844712
+N3844800(["מאפס משחק כדי שאפשר להתחיל מחדש"])
+N3844712 --> N3844800
+gameOver_End(((End))):::startEnd
+N3844800 --> gameOver_End
+end
+subgraph checkPlayer_Scope [checkPlayer]
+checkPlayer_Start([checkPlayer]):::startEnd
+N3848000{"אם אין לחיצה?"}
+checkPlayer_Start --> N3848000
+N3847696["לא עושים כלום ומחכים לקלט"]
+N3848000 -->|Yes| N3847696
+N3847696 --> checkPlayer_End
+N3851408{"הגנה על אינדקסים תקינים?"}
+N3848000 --> N3851408
+N3850248(["סיום משחק (מצב לא תקין)"])
+N3851408 --> N3850248
+N3851000["יציאה מהפונקציה"]
+N3850248 --> N3851000
+N3851000 --> checkPlayer_End
+N3863048{"השחקן לחץ נכון?"}
+N3851408 --> N3863048
+N3857432("עוברים לצעד הבא")
+N3863048 -->|Yes| N3857432
+N3860560{"השחקן סיים את כל הרצף?"}
+N3857432 --> N3860560
+N3859400("חוזרים לתור סיימון")
+N3860560 --> N3859400
+N3860152("השהיה קצרה לפני סיבוב חדש")
+N3859400 --> N3860152
+N3862080(["סיום משחק"])
+N3863048 --> N3862080
+checkPlayer_End(((End))):::startEnd
+N3860152 --> checkPlayer_End
+N3860560 --> checkPlayer_End
+N3862080 --> checkPlayer_End
+end
+subgraph setup_Scope [setup]
+setup_Start([setup]):::startEnd
+N3865032(["פתיחת תקשורת סריאל"])
+setup_Start --> N3865032
+N3868424("קריאת רעש מאנלוג כדי לזרוע רנדום")
+N3865032 --> N3868424
+N3869472(["קביעת seed לרנדום"])
+N3868424 --> N3869472
+subgraph LoopScope_3872040 [הגדרת פינים לכפתורים/לדים]
+N3871488["int i = 0"]
+N3869472 --> N3871488
+N3871216{{"i < 4?"}}:::loopHex
+N3871488 --> N3871216
+N3871600(["לד כיציאה"])
+N3871216 -->|True| N3871600
+N3871864(["כפתור עם Pullup פנימי (LOW = לחוץ)"])
+N3871600 --> N3871864
+N3871400["i++"]
+N3871864 --> N3871400
+N3871400 --> N3871216
+end
+N3874784(["באזר כיציאה"])
+N3871216 -->|False| N3874784
+N3875048(["התחלת המשחק במצב מוכן"])
+N3874784 --> N3875048
+setup_End(((End))):::startEnd
+N3875048 --> setup_End
+end
+subgraph loop_Scope [loop]
+loop_Start([loop]):::startEnd
+N3884232{"טרום-משחק: מחכים ללחיצה הראשונה?"}
+loop_Start --> N3884232
+N3878816(["“דופק”⁧ בסריאל כדי לראות שהלופ רץ"])
+N3884232 -->|Yes| N3878816
+N3878904(["בדיקת כפתורים"])
+N3878816 --> N3878904
+N3883448{"אם נלחץ כפתור להתחלה?"}
+N3878904 --> N3883448
+N3880976("הודעת התחלה")
+N3883448 -->|Yes| N3880976
+N3881440("יש כבר צבע אחד ברצף")
+N3880976 --> N3881440
+N3882384("הצבע הראשון = לחיצה להתחלה")
+N3881440 --> N3882384
+N3882576(["סיימון מציג מיד את הרצף הראשון"])
+N3882384 --> N3882576
+N3883832["מסיימים את הלופ כדי לא להמשיך לוגיקה נוספת באותו סיבוב"]
+N3882576 --> N3883832
+N3883448 --> N3883832
+N3883832 --> loop_End
+N3887184{"תור השחקן?"}
+N3884232 --> N3887184
+N3884608(["בדיקת לחיצה"])
+N3887184 -->|Yes| N3884608
+N3886400{"רק אם יש לחיצה אמיתית?"}
+N3884608 --> N3886400
+N3885632(["בדיקת ההתאמה לרצף"])
+N3886400 -->|Yes| N3885632
+N3886784["לא עוברים לתור סיימון באותו סיבוב"]
+N3885632 --> N3886784
+N3886400 --> N3886784
+N3886784 --> loop_End
+N3887464(["תור סיימון: מוסיפים צבע חדש לרצף"])
+N3887184 --> N3887464
+N3888112(["תור סיימון: מציגים את כל הרצף"])
+N3887464 --> N3888112
+loop_End(((End))):::startEnd
+N3888112 --> loop_End
+end
+setup_End --> loop_Start
+N3802856 -.-> playSingleColor_Start
+N3808664 -.-> resetGame_Start
+N3821512 -.-> playSingleColor_Start
+N3844800 -.-> resetGame_Start
+N3850248 -.-> gameOver_Start
+N3862080 -.-> gameOver_Start
+N3875048 -.-> resetGame_Start
+N3878904 -.-> checkButtons_Start
+N3882576 -.-> playCompleteSequence_Start
+N3884608 -.-> checkButtons_Start
+N3885632 -.-> checkPlayer_Start
+N3887464 -.-> addRandomColor_Start
+N3888112 -.-> playCompleteSequence_Start
+
+click resetGame_Start call jumpToLine(18)
+click N3784584 call jumpToLine(19)
+click N3785048 call jumpToLine(20)
+click N3785616 call jumpToLine(21)
+click N3786184 call jumpToLine(22)
+click N3787576 call jumpToLine(24)
+click N3787304 call jumpToLine(24)
+click N3788816 call jumpToLine(24)
+click N3787488 call jumpToLine(24)
+click N3789216 call jumpToLine(25)
+click checkButtons_Start call jumpToLine(31)
+click N3792488 call jumpToLine(32)
+click N3793776 call jumpToLine(34)
+click N3793504 call jumpToLine(34)
+click N3805608 call jumpToLine(35)
+click N3805424 call jumpToLine(37)
+click N3796232 call jumpToLine(38)
+click N3804640 call jumpToLine(39)
+click N3798680 call jumpToLine(40)
+click N3799712 call jumpToLine(41)
+click N3800280 call jumpToLine(42)
+click N3802568 call jumpToLine(44)
+click N3802264 call jumpToLine(45)
+click N3802856 call jumpToLine(47)
+click N3804232 call jumpToLine(48)
+click N3805024 call jumpToLine(50)
+click N3793688 call jumpToLine(34)
+click addRandomColor_Start call jumpToLine(55)
+click N3809824 call jumpToLine(56)
+click N3808576 call jumpToLine(57)
+click N3808664 call jumpToLine(58)
+click N3809416 call jumpToLine(59)
+click N3811144 call jumpToLine(62)
+click N3812544 call jumpToLine(63)
+click N3811672 call jumpToLine(64)
+click N3815016 call jumpToLine(67)
+click playCompleteSequence_Start call jumpToLine(70)
+click N3817096 call jumpToLine(71)
+click N3820464 call jumpToLine(75)
+click N3820192 call jumpToLine(75)
+click N3822048 call jumpToLine(76)
+click N3821512 call jumpToLine(77)
+click N3822888 call jumpToLine(78)
+click N3820376 call jumpToLine(75)
+click N3823976 call jumpToLine(81)
+click N3824536 call jumpToLine(82)
+click playSingleColor_Start call jumpToLine(85)
+click N3827168 call jumpToLine(86)
+click N3827256 call jumpToLine(87)
+click N3827520 call jumpToLine(88)
+click N3830592 call jumpToLine(89)
+click N3830784 call jumpToLine(90)
+click N3831048 call jumpToLine(91)
+click gameOver_Start call jumpToLine(95)
+click N3834856 call jumpToLine(96)
+click N3836432 call jumpToLine(98)
+click N3838296 call jumpToLine(99)
+click N3838024 call jumpToLine(99)
+click N3840040 call jumpToLine(100)
+click N3839248 call jumpToLine(101)
+click N3839512 call jumpToLine(102)
+click N3842584 call jumpToLine(103)
+click N3842776 call jumpToLine(104)
+click N3838208 call jumpToLine(99)
+click N3844712 call jumpToLine(106)
+click N3844800 call jumpToLine(108)
+click checkPlayer_Start call jumpToLine(111)
+click N3848000 call jumpToLine(114)
+click N3847696 call jumpToLine(115)
+click N3851408 call jumpToLine(118)
+click N3850248 call jumpToLine(120)
+click N3851000 call jumpToLine(121)
+click N3863048 call jumpToLine(129)
+click N3857432 call jumpToLine(130)
+click N3860560 call jumpToLine(132)
+click N3859400 call jumpToLine(134)
+click N3860152 call jumpToLine(135)
+click N3862080 call jumpToLine(139)
+click setup_Start call jumpToLine(145)
+click N3865032 call jumpToLine(146)
+click N3868424 call jumpToLine(149)
+click N3869472 call jumpToLine(152)
+click N3871488 call jumpToLine(154)
+click N3871216 call jumpToLine(154)
+click N3871600 call jumpToLine(155)
+click N3871864 call jumpToLine(156)
+click N3871400 call jumpToLine(154)
+click N3874784 call jumpToLine(158)
+click N3875048 call jumpToLine(160)
+click loop_Start call jumpToLine(163)
+click N3884232 call jumpToLine(165)
+click N3878816 call jumpToLine(166)
+click N3878904 call jumpToLine(167)
+click N3883448 call jumpToLine(169)
+click N3880976 call jumpToLine(170)
+click N3881440 call jumpToLine(172)
+click N3882384 call jumpToLine(173)
+click N3882576 call jumpToLine(175)
+click N3883832 call jumpToLine(177)
+click N3887184 call jumpToLine(180)
+click N3884608 call jumpToLine(181)
+click N3886400 call jumpToLine(182)
+click N3885632 call jumpToLine(183)
+click N3886784 call jumpToLine(185)
+click N3887464 call jumpToLine(188)
+click N3888112 call jumpToLine(189)</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.12.2/dist/mermaid.esm.min.mjs';
+        import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs';
+
+        mermaid.registerLayoutLoaders(elkLayouts);
+        
+        // הגדרת Theme קבועה (Light) לקובץ המיוצא - תואם לבקשה
+        mermaid.initialize({ 
+            startOnLoad: true, 
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#fefefe',
+                primaryTextColor: '#2b2b2f',
+                primaryBorderColor: '#000',
+                lineColor: '#2b2b2f',
+                secondaryColor: '#fff',
+                tertiaryColor: '#fff'
+            }
+        });
+
+        const sourceCode = "// ===== הגדרות חומרה =====\nconst int buttonPins[] = { 2, 3, 4, 5 };                          //\\ פיני כפתורים (INPUT_PULLUP)\nconst int ledPins[] = { 6, 7, 8, 9 };                             //\\ פיני לדים\nconst char* colorNames[] = { \"Red\", \"Green\", \"Blue\", \"Yellow\" };  //\\ שמות צבעים לדיבאג/הדפסות\nconst int speakerPin = 10;                                        //\\ פין לרמקול/באזר\n\nconst int gameOverTone[] = { 100, 200, 300, 400, 500, 400, 300, 200, 100 };  //\\ רצף תדרים ל\"Game Over\"\nconst int tones[] = { 262, 330, 392, 523 };                                  //\\ תדרים לכל צבע: C, E, G, C גבוה\n\n// ===== משתנים למשחק =====\nint sequence[100];              //\\ רצף המשחק (עד 100 צעדים)\nint sequenceLength = -1;        //\\ אורך הרצף הפעיל; -1 = המשחק עוד לא התחיל\nint playerIndex = 0;            //\\ אינדקס הצעד שהשחקן צריך לבצע עכשיו\nbool waitingForPlayer = false;  //\\ האם כרגע תור השחקן\nint buttonPressed = -1;         //\\ איזה כפתור נלחץ (-1 = לא נלחץ)\n\n// ===== פונקציות עזר =====\nvoid resetGame() {\n  sequenceLength = -1;       //\\  מחזיר את ,sequenceLength, למצב \"לפני התחלה\"\n  playerIndex = 0;           //\\ מתחילים ציפייה מהצעד הראשון\n  waitingForPlayer = false;  //\\ לא בתור שחקן\n  buttonPressed = -1;        //\\ אין לחיצה\n\n  for (int i = 0; i < 4; i++) digitalWrite(ledPins[i], LOW);  //\\ כיבוי כל הלדים\n  noTone(speakerPin);                                         //\\ כיבוי צליל\n\n  Serial.println(\"Simon is waiting for you to press a button\");  //*\n}\n\n\nvoid checkButtons() {\n  buttonPressed = -1;  //\\ איפוס: כרגע אין לחיצה\n\n  for (int j = 0; j < 4; j++) {                    //\\ סריקת 4 הכפתורים\n    int buttonState = digitalRead(buttonPins[j]);  //\\ קריאת מצב הכפתור (LOW = לחוץ ב-PULLUP)\n\n    if (buttonState == LOW) {                   //\\ נמצא כפתור לחוץ\n      delay(20);                                //\\ דיבאונס + מניעת \"לחיצה מתמשכת\"\n      if (digitalRead(buttonPins[j]) == LOW) {  //\\ אימות שהלחיצה אמיתית גם אחרי הדיליי\n        Serial.print(colorNames[j]);            //\\ הדפס שם הצבע\n        Serial.println(\" Button Pressed\");      //\\ הדפס הודעת לחיצה\n        buttonPressed = j;                      //\\ שמירת אינדקס הכפתור שנלחץ\n\n        while (digitalRead(buttonPins[j]) == LOW) {  //\\ לחכות לשחרור הכפתור כדי שלא ייספר כמה פעמים\n          delay(5);                                  //\\ השהיה קצרה בזמן שמחזיקים לחוץ\n        }\n        playSingleColor(j);  //\\ פידבק מיידי לשחקן (לד+טון) על הלחיצה\n        delay(20);           //\\ דיבאונס לשחרור  (מקטין קפיצות אחרי release)\n      }\n      break;  //\\ אחרי שמצאנו לחיצה אחת - מפסיקים סריקה\n    }\n  }\n}\n\nvoid addRandomColor() {\n  if (sequenceLength >= 100) {                   //\\ הגנה: לא לעבור את גודל המערך\n    Serial.println(\"Sequence full - you win?\");  //\\ הודעת מצב\n    resetGame();                                 //\\ איפוס משחק\n    return;                                      //\\ יציאה מהפונקציה\n  }\n\n  int randomNumber = random(0, 4);          //\\ בחירת צבע רנדומלי 0..3\n  sequence[sequenceLength] = randomNumber;  //\\ הוספת הצבע לסוף הרצף\n  sequenceLength++;                         //\\ הגדלת אורך הרצף\n\n  Serial.print(\"Added Random Color: \");      //*\n  Serial.println(colorNames[randomNumber]);  //\\ הדפס הצבע שנוסף\n}\n\nvoid playCompleteSequence() {\n  Serial.println(\"Playing Complete Sequence\");  //* מתחיל לנגן רצף\n  Serial.print(\"Sequence Length: \");            //*\n  Serial.println(sequenceLength);               //*\n\n  for (int i = 0; i < sequenceLength; i++) {  //\\ לולאה על כל הצעדים ברצף\n    int c = sequence[i];                      //\\ הצבע הנוכחי מהרצף\n    playSingleColor(c);                       //\\ ניגון צבע יחיד (לד+טון)\n    delay(400);                               //\\ זמן המתנה בין צבעים\n  }\n\n  playerIndex = 0;          //\\ מתחילים בדיקה מהתחלה (הצעד הראשון ברצף)\n  waitingForPlayer = true;  //\\ עכשיו תור השחקן\n}\n\nvoid playSingleColor(int currenColor) {\n  Serial.println(colorNames[currenColor]);   //*: הדפסת הצבע שמנוגן\n  digitalWrite(ledPins[currenColor], HIGH);  //\\ הדלקת הלד של הצבע\n  tone(speakerPin, tones[currenColor]);      //\\ הפעלת טון לפי הצבע\n  delay(700);                                //\\ משך הצגת הצבע\n  digitalWrite(ledPins[currenColor], LOW);   //\\ כיבוי הלד\n  noTone(speakerPin);                        //\\ כיבוי הטון\n}\n\n\nvoid gameOver() {\n  Serial.println(\"Game Over!\");  //\\ הודעת סיום משחק\n\n  int n = sizeof(gameOverTone) / sizeof(gameOverTone[0]);  //\\ חישוב מספר איברים במערך הטונים\n  for (int i = 0; i < n; i++) {                            //\\ לולאה על רצף ה-Game Over\n    int led = i % 4;                                       //\\ סיבוב בין 4 לדים\n    digitalWrite(ledPins[led], HIGH);                      //\\ הדלקת לד\n    tone(speakerPin, gameOverTone[i]);                     //\\ ניגון טון ה-Game Over הנוכחי\n    delay(120);                                            //\\ משך כל טון/פלאש\n    digitalWrite(ledPins[led], LOW);                       //\\ כיבוי לד\n  }\n  noTone(speakerPin);  //\\ כיבוי הטון בסוף\n\n  resetGame();  //\\ מאפס משחק כדי שאפשר להתחיל מחדש\n}\n\nvoid checkPlayer() {\n\n\n  if (buttonPressed == -1) {  //\\ אם אין לחיצה\n    return;                   //\\ לא עושים כלום ומחכים לקלט\n  }\n\n  if (playerIndex < 0 || playerIndex >= sequenceLength) {  //\\ הגנה על אינדקסים תקינים\n    Serial.println(\"Index error - resetting\");             //*\n    gameOver();                                            //\\ סיום משחק (מצב לא תקין)\n    return;                                                //\\ יציאה מהפונקציה\n  }\n\n  Serial.print(\"Button Pressed: \");       //*\n  Serial.println(buttonPressed);          //*\n  Serial.print(\"Expected: \");             //*\n  Serial.println(sequence[playerIndex]);  //*\n\n  if (buttonPressed == sequence[playerIndex]) {  //\\ השחקן לחץ נכון\n    playerIndex++;                               //\\ עוברים לצעד הבא\n\n    if (playerIndex == sequenceLength) {  //\\ השחקן סיים את כל הרצף\n      Serial.println(\"Round complete!\");  //*\n      waitingForPlayer = false;           //\\ חוזרים לתור סיימון\n      delay(500);                         //\\ השהיה קצרה לפני סיבוב חדש\n    }\n  } else {                                    //\\ השחקן טעה\n    Serial.println(\"Wrong button pressed!\");  //*\n    gameOver();                               //\\ סיום משחק\n  }\n}\n\n\n// ===== setup/loop =====\nvoid setup() {\n  Serial.begin(9600);          //\\ פתיחת תקשורת סריאל\n  Serial.println(\"setup...\");  //*\n\n  long analogSeed = analogRead(A0);     //\\ קריאת רעש מאנלוג כדי לזרוע רנדום\n  Serial.print(\"adding randomSeed: \");  //*\n  Serial.println(analogSeed);           //*\n  randomSeed(analogSeed);               //\\ קביעת seed לרנדום\n\n  for (int i = 0; i < 4; i++) {            //\\ הגדרת פינים לכפתורים/לדים\n    pinMode(ledPins[i], OUTPUT);           //\\ לד כיציאה\n    pinMode(buttonPins[i], INPUT_PULLUP);  //\\ כפתור עם Pullup פנימי (LOW = לחוץ)\n  }\n  pinMode(speakerPin, OUTPUT);  //\\ באזר כיציאה\n\n  resetGame();  //\\ התחלת המשחק במצב מוכן\n}\n\nvoid loop() {\n\n  if (sequenceLength == -1) {  //\\  טרום-משחק: מחכים ללחיצה הראשונה\n    Serial.print(\".\");         //\\ “דופק”⁧ בסריאל כדי לראות שהלופ רץ\n    checkButtons();            //\\ בדיקת כפתורים\n\n    if (buttonPressed != -1) {          //\\ אם נלחץ כפתור להתחלה\n      Serial.println(\"Simon Begins!\");  //\\ הודעת התחלה\n \n      sequenceLength = 1;           //\\ יש כבר צבע אחד ברצף\n      sequence[0] = buttonPressed;  //\\ הצבע הראשון = לחיצה להתחלה\n\n      playCompleteSequence();  //\\ סיימון מציג מיד את הרצף הראשון\n    }\n    return;  //\\ מסיימים את הלופ כדי לא להמשיך לוגיקה נוספת באותו סיבוב\n  }\n\n  if (waitingForPlayer) {       //\\ תור השחקן\n    checkButtons();             //\\ בדיקת לחיצה\n    if (buttonPressed != -1) {  //\\ רק אם יש לחיצה אמיתית\n      checkPlayer();            //\\ בדיקת ההתאמה לרצף\n    }\n    return;  //\\ לא עוברים לתור סיימון באותו סיבוב\n  }\n\n  addRandomColor();        //\\ תור סיימון: מוסיפים צבע חדש לרצף\n  playCompleteSequence();  //\\ תור סיימון: מציגים את כל הרצף\n}";
+        const lineMapping = {"17":"resetGame_Start","18":"N3784584","19":"N3785048","20":"N3785616","21":"N3786184","23":"N3787488","24":"N3789216","30":"checkButtons_Start","31":"N3792488","33":"N3793688","34":"N3805608","36":"N3805424","37":"N3796232","38":"N3804640","39":"N3798680","40":"N3799712","41":"N3800280","43":"N3802568","44":"N3802264","46":"N3802856","47":"N3804232","49":"N3805024","54":"addRandomColor_Start","55":"N3809824","56":"N3808576","57":"N3808664","58":"N3809416","61":"N3811144","62":"N3812544","63":"N3811672","66":"N3815016","69":"playCompleteSequence_Start","70":"N3817096","74":"N3820376","75":"N3822048","76":"N3821512","77":"N3822888","80":"N3823976","81":"N3824536","84":"playSingleColor_Start","85":"N3827168","86":"N3827256","87":"N3827520","88":"N3830592","89":"N3830784","90":"N3831048","94":"gameOver_Start","95":"N3834856","97":"N3836432","98":"N3838208","99":"N3840040","100":"N3839248","101":"N3839512","102":"N3842584","103":"N3842776","105":"N3844712","107":"N3844800","110":"checkPlayer_Start","113":"N3848000","114":"N3847696","117":"N3851408","119":"N3850248","120":"N3851000","128":"N3863048","129":"N3857432","131":"N3860560","133":"N3859400","134":"N3860152","138":"N3862080","144":"setup_Start","145":"N3865032","148":"N3868424","151":"N3869472","153":"N3871400","154":"N3871600","155":"N3871864","157":"N3874784","159":"N3875048","162":"loop_Start","164":"N3884232","165":"N3878816","166":"N3878904","168":"N3883448","169":"N3880976","171":"N3881440","172":"N3882384","174":"N3882576","176":"N3883832","179":"N3887184","180":"N3884608","181":"N3886400","182":"N3885632","184":"N3886784","187":"N3887464","188":"N3888112"};
+        let panZoom = null;
+        
+        const codeContent = document.getElementById('codeContent');
+        const lines = sourceCode.split('\n');
+        lines.forEach((line, index) => {
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'code-line';
+            lineDiv.dataset.lineNumber = index;
+            const codeEl = document.createElement('code');
+            codeEl.className = 'language-cpp hljs';
+            codeEl.textContent = line || ' ';
+            lineDiv.appendChild(codeEl);
+            lineDiv.addEventListener('click', () => highlightNodeFromLine(index));
+            codeContent.appendChild(lineDiv);
+        });
+        
+        document.querySelectorAll('code.language-cpp').forEach(el => { hljs.highlightElement(el); });
+        
+        const checkRender = setInterval(() => {
+            const svg = document.querySelector('#graphDiv svg');
+            if (svg && svg.getBBox().width > 0) {
+                clearInterval(checkRender);
+                initPanZoom(svg);
+                setupInteractions(svg);
+            }
+        }, 500);
+
+        function initPanZoom(svgElement) {
+            svgElement.style.height = "100%";
+            svgElement.style.width = "100%";
+            panZoom = svgPanZoom(svgElement, { 
+                zoomEnabled: true, controlIconsEnabled: false, fit: true, center: true, minZoom: 0.1, maxZoom: 10 
+            });
+        }
+
+        function setupInteractions(svgElement) {
+            const nodes = svgElement.querySelectorAll('.node');
+            nodes.forEach(node => {
+                node.style.cursor = 'pointer';
+                node.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    highlightLineFromNode(node);
+                });
+            });
+        }
+
+        window.highlightNodeFromLine = function(lineNumber) {
+            const nodeId = lineMapping[lineNumber];
+            if (!nodeId) return;
+            document.querySelectorAll('.code-line.highlight').forEach(el => el.classList.remove('highlight'));
+            document.querySelectorAll('.highlight-node').forEach(el => el.classList.remove('highlight-node'));
+            const lineEl = document.querySelector(`.code-line[data-line-number="${lineNumber}"]`);
+            if (lineEl) {
+                lineEl.classList.add('highlight');
+                lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            const svg = document.querySelector('#graphDiv svg');
+            if (svg) {
+                let nodeEl = svg.querySelector(`[id^="flowchart-${nodeId}-"]`);
+                if (!nodeEl) nodeEl = svg.querySelector(`[id="${nodeId}"]`);
+                if (!nodeEl) {
+                    const allNodes = Array.from(svg.querySelectorAll('.node'));
+                    nodeEl = allNodes.find(el => el.id.includes(`-${nodeId}-`) || el.id.endsWith(`-${nodeId}`));
+                }
+                if (nodeEl) {
+                    const gNode = nodeEl.closest('.node') || nodeEl;
+                    gNode.classList.add('highlight-node');
+                    focusOnElement(gNode);
+                }
+            }
+        };
+
+        window.highlightLineFromNode = function(node) {
+            const id = node.id || node.closest('.node')?.id || '';
+            const match = id.match(/flowchart-(.+?)-(\d+)/) || id.match(/(.+?)-(\d+)/);
+            const nodeId = match ? match[1] : id.replace('flowchart-', '').split('-')[0];
+            
+            if (!nodeId) return;
+            let lineNumber = null;
+            for (const [line, id] of Object.entries(lineMapping)) {
+                if (id === nodeId) { lineNumber = parseInt(line); break; }
+            }
+            if (lineNumber === null) return;
+            window.highlightNodeFromLine(lineNumber);
+        };
+
+            function focusOnElement(node) {
+                if (!panZoom) return;
+                const nodeRect = node.getBoundingClientRect();
+                const containerRect = document.getElementById('graphDiv').getBoundingClientRect();
+                const safeZoneH = containerRect.height * 0.3; 
+                const safeZoneW = containerRect.width * 0.3;  
+                const centerX = containerRect.left + containerRect.width / 2;
+                const centerY = containerRect.top + containerRect.height / 2;
+                const nodeCenterX = nodeRect.left + nodeRect.width / 2;
+                const nodeCenterY = nodeRect.top + nodeRect.height / 2;
+
+                if (Math.abs(nodeCenterX - centerX) < safeZoneW && Math.abs(nodeCenterY - centerY) < safeZoneH) {
+                    savedPan = panZoom.getPan(); isUserPanning = true; return; 
+                }
+                const diffX = centerX - nodeCenterX;
+                const diffY = centerY - nodeCenterY;
+                const currentPan = panZoom.getPan();
+                const targetPan = { x: currentPan.x + diffX, y: currentPan.y + diffY };
+                animatePan(currentPan, targetPan, 300);
+            }
+
+            function animatePan(start, end, duration) {
+                const startTime = performance.now();
+
+                function step(currentTime) {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    // פונקציית Ease-Out לתנועה טבעית
+                    const ease = 1 - Math.pow(1 - progress, 3);
+
+                    const newX = start.x + (end.x - start.x) * ease;
+                    const newY = start.y + (end.y - start.y) * ease;
+
+                    panZoom.pan({x: newX, y: newY});
+
+                    if (progress < 1) {
+                        requestAnimationFrame(step);
+                    } else {
+                        savedPan = panZoom.getPan();
+                        isUserPanning = true;
+                    }
+                }
+                
+                requestAnimationFrame(step);
+            }
+    </script>
+</body>
+</html>
