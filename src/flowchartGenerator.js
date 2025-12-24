@@ -10,7 +10,7 @@ async function initParser(wasmPath) {
 }
 
 function generateMermaidCode(code) {
-    if (!parser) return { graph: 'graph TD\nError["Parser not initialized"]', mapping: {} };
+    if (!parser) return { graph: 'flowchart TD\nError["Parser not initialized"]', mapping: {} };
 
     try {
         const sourceLines = code.split(/\r?\n/);
@@ -18,7 +18,9 @@ function generateMermaidCode(code) {
         const tree = parser.parse(cleanCode);
         const root = tree.rootNode;
 
+        let definedFunctions = new Set();
         let functions = [];
+        
         for (let i = 0; i < root.childCount; i++) {
             const child = root.child(i);
             if (child.type === 'function_definition') {
@@ -26,19 +28,25 @@ function generateMermaidCode(code) {
                 const bodyNode = child.child(2);
                 if (nameNode && bodyNode) {
                     functions.push({ name: nameNode.text, body: bodyNode });
+                    definedFunctions.add(nameNode.text);
                 }
             }
         }
 
-        let graph = 'graph TD\n';
-        graph += 'classDef startEnd fill:#252526,stroke:#fff,stroke-width:2px,color:#fff;\n';
-        graph += 'classDef activeNode fill:#ffff00,stroke:#000000,stroke-width:3px;\n';
-        graph += 'classDef loopHex fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000;\n';
+        // הגדרת ELK Layout
+        let graph = '---\nconfig:\n  fontFamily: Heebo\n  layout: elk\n  elk:\n    mergeEdges:true\n    cycleBreakingStrategy:DEPTH_FIRST\n    mergeEdges:true\n    nodePlacementStrategy:NETWORK_SIMPLEX\n---\nflowchart TD\n';
         
-        graph += 'GlobalStart((Start)):::startEnd --> setup_Start\n';
+        graph += 'classDef startEnd stroke-width:2px;\n';
+        graph += 'classDef activeNode stroke-width:2px;\n';
+        graph += 'classDef loopHex stroke-width:1.5px;\n';
+        
+        if (definedFunctions.has('setup')) {
+            graph += 'GlobalStart((Start)):::startEnd --> setup_Start\n';
+        }
 
         let clickEvents = [];
         let lineMapping = {}; 
+        let crossFunctionEdges = [];
 
         function registerMapping(id, startLine, endLine) {
             clickEvents.push(`click ${id} call jumpToLine(${startLine + 1})`);
@@ -51,33 +59,41 @@ function generateMermaidCode(code) {
         function getLabel(node, fallbackType) {
             const lineIndex = node.startPosition.row;
             const originalLine = sourceLines[lineIndex] || "";
+            
+            // בדיקת הערות קסם //\\
             const magicMatch = originalLine.match(/\/\/\\\s*(.*)$/);
             if (magicMatch && magicMatch[1]) {
-                return sanitize(magicMatch[1].trim());
+                // TIKUN: החלפת פסיקים בירידת שורה (<br/>) רק בתוך הטקסט המותאם
+                let customText = sanitize(magicMatch[1].trim());
+                return customText.replace(/,/g, '<br/>');
             }
+            
             let rawText = node.text.split('\n')[0].trim().replace(/;/g, '');
             let label = sanitize(rawText.substring(0, 40));
             if (!label || label.length < 2) label = fallbackType || node.type;
             return label;
         }
 
-        function processBlock(node, incomingIds, edgeLabel = null) {
+        // פונקציית עזר לבדיקה אם יש הערת קסם בשורה
+        function hasMagicComment(lineIndex) {
+            const line = sourceLines[lineIndex] || "";
+            return line.includes('//\\');
+        }
+
+        function processBlock(node, incomingIds, edgeLabel = null, context = {}) {
             if (!node) return incomingIds;
+            if (incomingIds.length === 0) return [];
 
             const startLine = node.startPosition.row;
             const endLine = node.endPosition.row;
 
-            if (node.type === 'ERROR') {
-                const id = `N${node.id}`;
-                graph += `${id}["Syntax Error"]\n`;
-                registerMapping(id, startLine, endLine);
-                incomingIds.forEach(prev => {
-                    if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${id}\n`;
-                    else graph += `${prev} --> ${id}\n`;
-                });
-                return [id];
+            // בדיקת הסתרה (Magic Comment //*)
+            const originalLine = sourceLines[startLine] || "";
+            if (originalLine.trim().endsWith('//*')) {
+                return incomingIds; 
             }
 
+            // --- Compound Block ---
             if (node.type === 'compound_statement') {
                 let currentIds = incomingIds;
                 let nextEdgeLabel = edgeLabel;
@@ -86,93 +102,135 @@ function generateMermaidCode(code) {
                     const child = node.child(i);
                     if (['{', '}', ';', 'comment'].includes(child.type)) continue;
 
-                    const nextIds = processBlock(child, currentIds, nextEdgeLabel);
+                    if (currentIds.length === 0) break;
+
+                    const nextIds = processBlock(child, currentIds, nextEdgeLabel, context);
+                    currentIds = nextIds;
                     
-                    if (nextIds.length > 0) {
-                        currentIds = nextIds;
-                        if (['for_statement', 'while_statement'].includes(child.type)) {
-                            nextEdgeLabel = "False";
-                        } else {
-                            nextEdgeLabel = null;
-                        }
+                    if (['for_statement', 'while_statement'].includes(child.type)) {
+                        nextEdgeLabel = "False";
+                    } else {
+                        nextEdgeLabel = null;
                     }
                 }
                 return currentIds;
+            }
+
+            // --- Return Statement ---
+            if (node.type === 'return_statement') {
+                const id = `N${node.id}`;
+                let label = "";
+
+                if (hasMagicComment(startLine)) {
+                    label = getLabel(node);
+                } else {
+                    label = "return";
+                    if (node.childCount > 1) { 
+                        const retValNode = node.child(1);
+                        if (retValNode && retValNode.text !== ';') {
+                            label += " " + sanitize(retValNode.text);
+                        }
+                    }
+                }
+                
+                graph += `${id}["${label}"]\n`;
+                registerMapping(id, startLine, endLine);
+                
+                incomingIds.forEach(prev => {
+                    const edge = edgeLabel ? `|${edgeLabel}|` : '';
+                    graph += `${prev} -->${edge} ${id}\n`;
+                });
+
+                if (context.currentFuncName) {
+                    graph += `${id} --> ${context.currentFuncName}_End\n`;
+                }
+
+                return []; 
+            }
+
+            // --- Break Statement ---
+            if (node.type === 'break_statement') {
+                const id = `N${node.id}`;
+                let label = "break";
+
+                if (hasMagicComment(startLine)) {
+                    label = getLabel(node);
+                }
+
+                graph += `${id}["${label}"]\n`;
+                registerMapping(id, startLine, endLine);
+
+                incomingIds.forEach(prev => {
+                    const edge = edgeLabel ? `|${edgeLabel}|` : '';
+                    graph += `${prev} -->${edge} ${id}\n`;
+                });
+
+                return []; 
             }
 
             if (['{', '}', ';', 'comment'].includes(node.type)) return incomingIds;
 
             const id = `N${node.id}`;
 
-            // --- For Loop ---
+            // --- For Loop (שוחזר) ---
             if (node.type === 'for_statement') {
                 const initNode = node.childForFieldName('initializer');
                 const condNode = node.childForFieldName('condition');
                 const updateNode = node.childForFieldName('update');
                 const bodyNode = node.childForFieldName('body');
 
-                // 1. חישוב נקודת הכניסה ללולאה
                 let entryId;
                 if (initNode) entryId = `N${initNode.id}`;
                 else if (condNode) entryId = `N${condNode.id}`;
                 else entryId = `N${node.id}_COND`;
 
-                // 2. פתיחת ה-Subgraph
                 const loopScopeId = `LoopScope_${node.id}`;
                 const customLabel = getLabel(node, "Loop");
                 const scopeTitle = customLabel !== "Loop" && !customLabel.startsWith("for") ? customLabel : "For Loop";
                 
                 graph += `subgraph ${loopScopeId} [${scopeTitle}]\n`;
 
-                // 3. הגדרת צומת הכניסה וחיבור החצים הנכנסים *בתוך* ה-Subgraph
-                // זה התיקון הקריטי למניעת קריסת Mermaid
                 if (initNode) {
                     const initLabel = sanitize(initNode.text.replace(/;/g, ''));
                     graph += `${entryId}["${initLabel}"]\n`; 
                     registerMapping(entryId, initNode.startPosition.row, initNode.endPosition.row);
-                } else {
-                    // אם אין אתחול, הכניסה היא התנאי - נגדיר אותו מיד בהמשך, החיבור ייעשה אליו
                 }
 
-                // כעת בטוח לחבר את החצים מבחוץ פנימה
                 incomingIds.forEach(prev => {
-                    if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${entryId}\n`;
-                    else graph += `${prev} --> ${entryId}\n`;
+                    const edge = edgeLabel ? `|${edgeLabel}|` : '';
+                    graph += `${prev} -->${edge} ${entryId}\n`;
                 });
 
-                // 4. תנאי
                 const condId = condNode ? `N${condNode.id}` : `N${node.id}_COND`;
                 const condText = condNode ? sanitize(condNode.text) : "true";
                 
                 graph += `${condId}{{"${condText}?"}}:::loopHex\n`;
-                registerMapping(condId, startLine); // מיפוי רק לשורת הכותרת
+                registerMapping(condId, startLine); 
                 
                 if (initNode) {
                     graph += `${entryId} --> ${condId}\n`;
                 }
                 
-                // 5. גוף הלולאה
-                const bodyEnds = processBlock(bodyNode, [condId], "True");
+                const bodyEnds = processBlock(bodyNode, [condId], "True", context);
 
-                // 6. עדכון
                 let updateEnds = bodyEnds;
-                if (updateNode) {
-                    const upId = `N${updateNode.id}`;
-                    graph += `${upId}["${sanitize(updateNode.text)}"]\n`;
-                    registerMapping(upId, updateNode.startPosition.row, updateNode.endPosition.row);
-                    bodyEnds.forEach(prev => graph += `${prev} --> ${upId}\n`);
-                    updateEnds = [upId];
+                if (bodyEnds.length > 0) {
+                    if (updateNode) {
+                        const upId = `N${updateNode.id}`;
+                        graph += `${upId}["${sanitize(updateNode.text)}"]\n`;
+                        registerMapping(upId, updateNode.startPosition.row, updateNode.endPosition.row);
+                        bodyEnds.forEach(prev => graph += `${prev} --> ${upId}\n`);
+                        updateEnds = [upId];
+                    }
+                    updateEnds.forEach(prev => graph += `${prev} --> ${condId}\n`);
                 }
 
-                // 7. חזרה לתנאי
-                updateEnds.forEach(prev => graph += `${prev} --> ${condId}\n`);
-
-                graph += `end\n`; // סיום Subgraph
+                graph += `end\n`; 
 
                 return [condId];
             }
 
-            // --- While Loop ---
+            // --- While Loop (שוחזר) ---
             if (node.type === 'while_statement') {
                 const condNode = node.child(1);
                 const bodyNode = node.child(2);
@@ -184,17 +242,20 @@ function generateMermaidCode(code) {
                 registerMapping(condId, startLine);
                 
                 incomingIds.forEach(prev => {
-                    if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${condId}\n`;
-                    else graph += `${prev} --> ${condId}\n`;
+                    const edge = edgeLabel ? `|${edgeLabel}|` : '';
+                    graph += `${prev} -->${edge} ${condId}\n`;
                 });
                 
-                const bodyEnds = processBlock(bodyNode, [condId], "True");
-                bodyEnds.forEach(end => graph += `${end} --> ${condId}\n`);
+                const bodyEnds = processBlock(bodyNode, [condId], "True", context);
+                
+                if (bodyEnds.length > 0) {
+                    bodyEnds.forEach(end => graph += `${end} --> ${condId}\n`);
+                }
                 
                 return [condId]; 
             }
 
-            // --- If Statement ---
+            // --- If Statement (שוחזר) ---
             if (node.type === 'if_statement') {
                 const condNode = node.child(1);
                 const thenNode = node.child(2);
@@ -207,58 +268,62 @@ function generateMermaidCode(code) {
                 registerMapping(ifId, startLine);
                 
                 incomingIds.forEach(prev => {
-                    if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${ifId}\n`;
-                    else graph += `${prev} --> ${ifId}\n`;
+                    const edge = edgeLabel ? `|${edgeLabel}|` : '';
+                    graph += `${prev} -->${edge} ${ifId}\n`;
                 });
                 
-                const thenEnds = processBlock(thenNode, [ifId], "Yes");
-                const elseEnds = elseNode ? processBlock(elseNode, [ifId], "No") : [ifId];
+                const thenEnds = processBlock(thenNode, [ifId], "Yes", context);
+                const elseEnds = elseNode ? processBlock(elseNode, [ifId], "No", context) : [ifId];
                 
                 return [...thenEnds, ...elseEnds];
             }
 
+            // --- Generic Statement / Function Call ---
             let label = getLabel(node);
-            let shapeL = '[', shapeR = ']';
+            let shapeL = '(', shapeR = ')';
+            let isCall = false;
+            let targetFunc = null;
+
             if (node.type === 'expression_statement' && node.child(0).type === 'call_expression') {
                 const funcName = node.child(0).child(0).text;
-                if (!['digitalWrite', 'analogWrite', 'delay', 'Serial.println', 'random'].includes(funcName)) {
-                    shapeL = '[['; shapeR = ']]'; 
+                if (definedFunctions.has(funcName)) {
+                    isCall = true;
+                    targetFunc = funcName;
+                    shapeL = '(['; shapeR = '])'; 
+                } else if (!['digitalWrite', 'analogWrite', 'delay', 'Serial.println', 'random'].includes(funcName)) {
+                    shapeL = '(['; shapeR = '])'; 
                 }
             }
 
             graph += `${id}${shapeL}"${label}"${shapeR}\n`;
             registerMapping(id, startLine, endLine);
 
+            if (isCall && targetFunc) {
+                crossFunctionEdges.push(`${id} -.-> ${targetFunc}_Start`);
+            }
+
             incomingIds.forEach(prev => {
-                if (prev !== id) {
-                    if (edgeLabel) graph += `${prev} -->|${edgeLabel}| ${id}\n`;
-                    else graph += `${prev} --> ${id}\n`;
-                }
+                const edge = edgeLabel ? `|${edgeLabel}|` : '';
+                graph += `${prev} -->${edge} ${id}\n`;
             });
             return [id];
         }
 
+        // --- Process Functions ---
         functions.forEach(func => {
             const funcName = func.name;
             graph += `subgraph ${funcName}_Scope [${funcName}]\n`;
             const startNode = `${funcName}_Start`;
-            graph += `${startNode}((${funcName})):::startEnd\n`;
+            graph += `${startNode}([${funcName}]):::startEnd\n`;
             registerMapping(startNode, func.body.startPosition.row);
             
-            const ends = processBlock(func.body, [startNode]);
+            const ends = processBlock(func.body, [startNode], null, { currentFuncName: funcName });
             
-            let endEdgeLabel = null;
-            const lastChild = func.body.lastNamedChild;
-            if (lastChild && ['for_statement', 'while_statement'].includes(lastChild.type)) {
-                endEdgeLabel = "False";
-            }
-
             const endNode = `${funcName}_End`;
             graph += `${endNode}(((End))):::startEnd\n`;
             
             ends.forEach(e => {
-                if (endEdgeLabel) graph += `${e} -->|${endEdgeLabel}| ${endNode}\n`;
-                else graph += `${e} --> ${endNode}\n`;
+                 graph += `${e} --> ${endNode}\n`;
             });
             
             graph += `end\n`;
@@ -266,20 +331,27 @@ function generateMermaidCode(code) {
 
         if (functions.find(f => f.name === 'setup') && functions.find(f => f.name === 'loop')) {
             graph += `setup_End --> loop_Start\n`;
-            graph += `loop_End --> loop_Start\n`;
+        }
+
+        if (crossFunctionEdges.length > 0) {
+            graph += crossFunctionEdges.join('\n') + '\n';
         }
 
         graph += '\n' + clickEvents.join('\n');
         return { graph, mapping: lineMapping };
 
     } catch (e) {
-        return { graph: `graph TD\nError["Error: ${e.message}"]`, mapping: {} };
+        return { graph: `flowchart TD\nError["Error: ${e.message}"]`, mapping: {} };
     }
 }
 
 function sanitize(text) {
     if (!text) return "";
-    return text.replace(/"/g, "'").replace(/[\r\n]+/g, ' ');
+    return text
+        .replace(/\\/g, '\\\\') 
+        .replace(/"/g, "'")     
+        .replace(/[\r\n]+/g, ' ') 
+        .trim();
 }
 
 module.exports = { initParser, generateMermaidCode };

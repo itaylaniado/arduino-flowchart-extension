@@ -49,21 +49,28 @@ async function activate(context) {
 
     context.subscriptions.push(disposable);
 
-    // עדכון הגרף בשינוי קוד (Live Preview)
-    vscode.workspace.onDidChangeTextDocument(event => {
+    const debouncedUpdate = debounce((event) => {
         if (currentPanel && event.document === vscode.window.activeTextEditor?.document) {
             updateGraph();
         }
-    }, null, context.subscriptions);
+    }, 600); 
 
-    // פיצ'ר שמירת Markdown בעת שמירת הקובץ
-    vscode.workspace.onDidSaveTextDocument(document => {
-        if (document.languageId === 'cpp' || document.languageId === 'arduino' || document.languageId === 'c') {
-            saveMarkdownFile(document);
+    vscode.workspace.onDidChangeTextDocument(debouncedUpdate, null, context.subscriptions);
+
+    // זיהוי שינוי Theme
+    vscode.window.onDidChangeActiveColorTheme(() => {
+        if (currentPanel) {
+            currentPanel.webview.html = getWebviewContent();
+            updateGraph();
         }
     });
 
-    // סנכרון סמן: לחיצה על הקוד מדגישה את הבלוק
+    vscode.workspace.onDidSaveTextDocument(document => {
+        if (document.languageId === 'cpp' || document.languageId === 'arduino' || document.languageId === 'c') {
+            saveFlowchartHtml(document);
+        }
+    });
+
     vscode.window.onDidChangeTextEditorSelection(event => {
         if (!currentPanel || !currentPanel.visible) return;
         if (event.textEditor.document !== vscode.window.activeTextEditor?.document) return;
@@ -80,20 +87,263 @@ async function activate(context) {
     }, null, context.subscriptions);
 }
 
-// פונקציה לשמירת קובץ Markdown
-function saveMarkdownFile(document) {
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), wait);
+    };
+}
+
+function saveFlowchartHtml(document) {
     const code = document.getText();
-    const result = generateMermaidCode(code); 
+    const result = generateMermaidCode(code);
+    const mapping = JSON.stringify(result.mapping);
+    const escapedCode = code.replace(/&/g, '&amp;');
     
-    const mdContent = `# Flowchart: ${path.basename(document.fileName)}\n\nAuto-generated flowchart based on source code.\n\n\`\`\`mermaid\n---\nconfig:\n  theme: 'base'\n  themeVariables:\n    primaryColor: '#fff'\n    primaryTextColor: '#2b2b2f'\n    primaryBorderColor: '#000'\n    lineColor: '#2b2b2f'\n    secondaryColor: '#fff'\n    tertiaryColor: '#fff'\n---\n${result.graph}\n\`\`\`\n`;
+    // ב-HTML המיוצא, נשתמש ב-Light Theme כברירת מחדל (או ניטרלי)
+    // הערה: ניתן לשנות את הצבעים כאן אם תרצה שהקובץ המיוצא יהיה כהה
+    
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TXP_Flowchart: ${path.basename(document.fileName)}</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Consolas', 'Monaco', monospace; 
+            background: #1e1e1e; 
+            color: #d4d4d4;
+            overflow: hidden;
+        }
+        #container { display: grid; grid-template-columns: 1fr 1fr; height: 100vh; gap: 0; }
+        #codePanel { background: #1e1e1e; overflow-y: auto; border-right: 2px solid #333; position: relative; }
+        #codeHeader { position: sticky; top: 0; background: #252526; padding: 12px 15px; border-bottom: 1px solid #333; font-weight: bold; color: #cccccc; z-index: 10; }
+        #codeContent { padding: 0; counter-reset: line; }
+        .code-line { padding: 0 15px 0 60px; position: relative; cursor: pointer; transition: background 0.15s; white-space: pre; font-size: 13px; line-height: 20px; display: flex; align-items: center; }
+        .code-line:hover { background: #2a2d2e; }
+        .code-line::before { counter-increment: line; content: counter(line); position: absolute; left: 15px; width: 35px; text-align: right; color: #858585; user-select: none; }
+        .code-line.highlight { background: #264f78 !important; border-left: 3px solid #0667b6; }
+        .code-line code { flex: 1; }
+        
+        #flowchartPanel { background: #fff; display: flex; flex-direction: column; border-left: 1px solid #ccc; }
+        #chartHeader { background: #eee; padding: 12px 15px; border-bottom: 1px solid #ccc; font-weight: bold; color: #333; display: flex; gap: 10px; align-items: center; }
+        button { background: #0e639c; color: white; border: none; padding: 6px 12px; cursor: pointer; border-radius: 2px; font-size: 12px; transition: background 0.2s; }
+        button:hover { background: #1177bb; }
+        #graphDiv { flex: 1; overflow: hidden; background: #fff; cursor: grab; position: relative; }
+        #graphDiv:active { cursor: grabbing; }
+        #mermaidSvg .cluster rect {rx: 20px !important; ry: 20px !important; fill:#f9f9f9 !important;}
+        
+        .node { cursor: pointer !important; }
+        
+        /* Highlighting for exported file */
+        .highlight-node rect, .highlight-node circle, .highlight-node polygon, .highlight-node path {
+            stroke: #008184 !important;
+            stroke-width: 2px !important;
+            filter: drop-shadow(0 0 4px #008184b8);
+        }
+        
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #424242; }
+        ::-webkit-scrollbar-thumb:hover { background: #4e4e4e; }
+        .hljs { background: transparent; padding: 0; }
+        
+        @media print { 
+            #codePanel { display: none; } 
+            #container { grid-template-columns: 1fr; } 
+            #chartHeader { display: none; } 
+            body { background: white; color: black; } 
+            #graphDiv { background: white; } 
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="codePanel">
+            <div id="codeHeader">Source Code - ${path.basename(document.fileName)}</div>
+            <div id="codeContent"></div>
+        </div>
+        <div id="flowchartPanel">
+            <div id="chartHeader">
+                <span>TXP_Flowchart</span>
+                <button onclick="resetZoom()">Reset Zoom</button>
+                <button onclick="window.print()">Print Flowchart</button>
+            </div>
+            <div id="graphDiv" class="mermaid">${result.graph}</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.12.2/dist/mermaid.esm.min.mjs';
+        import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs';
+
+        mermaid.registerLayoutLoaders(elkLayouts);
+        
+        // הגדרת Theme קבועה (Light) לקובץ המיוצא - תואם לבקשה
+        mermaid.initialize({ 
+            startOnLoad: true, 
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#fefefe',
+                primaryTextColor: '#2b2b2f',
+                primaryBorderColor: '#000',
+                lineColor: '#2b2b2f',
+                secondaryColor: '#fff',
+                tertiaryColor: '#fff'
+            }
+        });
+
+        const sourceCode = ${JSON.stringify(escapedCode)};
+        const lineMapping = ${mapping};
+        let panZoom = null;
+        
+        const codeContent = document.getElementById('codeContent');
+        const lines = sourceCode.split('\\n');
+        lines.forEach((line, index) => {
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'code-line';
+            lineDiv.dataset.lineNumber = index;
+            const codeEl = document.createElement('code');
+            codeEl.className = 'language-cpp hljs';
+            codeEl.textContent = line || ' ';
+            lineDiv.appendChild(codeEl);
+            lineDiv.addEventListener('click', () => highlightNodeFromLine(index));
+            codeContent.appendChild(lineDiv);
+        });
+        
+        document.querySelectorAll('code.language-cpp').forEach(el => { hljs.highlightElement(el); });
+        
+        const checkRender = setInterval(() => {
+            const svg = document.querySelector('#graphDiv svg');
+            if (svg && svg.getBBox().width > 0) {
+                clearInterval(checkRender);
+                initPanZoom(svg);
+                setupInteractions(svg);
+            }
+        }, 500);
+
+        function initPanZoom(svgElement) {
+            svgElement.style.height = "100%";
+            svgElement.style.width = "100%";
+            panZoom = svgPanZoom(svgElement, { 
+                zoomEnabled: true, controlIconsEnabled: false, fit: true, center: true, minZoom: 0.1, maxZoom: 10 
+            });
+        }
+
+        function setupInteractions(svgElement) {
+            const nodes = svgElement.querySelectorAll('.node');
+            nodes.forEach(node => {
+                node.style.cursor = 'pointer';
+                node.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    highlightLineFromNode(node);
+                });
+            });
+        }
+
+        window.highlightNodeFromLine = function(lineNumber) {
+            const nodeId = lineMapping[lineNumber];
+            if (!nodeId) return;
+            document.querySelectorAll('.code-line.highlight').forEach(el => el.classList.remove('highlight'));
+            document.querySelectorAll('.highlight-node').forEach(el => el.classList.remove('highlight-node'));
+            const lineEl = document.querySelector(\`.code-line[data-line-number="\${lineNumber}"]\`);
+            if (lineEl) {
+                lineEl.classList.add('highlight');
+                lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            const svg = document.querySelector('#graphDiv svg');
+            if (svg) {
+                let nodeEl = svg.querySelector(\`[id^="flowchart-\${nodeId}-"]\`);
+                if (!nodeEl) nodeEl = svg.querySelector(\`[id="\${nodeId}"]\`);
+                if (!nodeEl) {
+                    const allNodes = Array.from(svg.querySelectorAll('.node'));
+                    nodeEl = allNodes.find(el => el.id.includes(\`-\${nodeId}-\`) || el.id.endsWith(\`-\${nodeId}\`));
+                }
+                if (nodeEl) {
+                    const gNode = nodeEl.closest('.node') || nodeEl;
+                    gNode.classList.add('highlight-node');
+                    focusOnElement(gNode);
+                }
+            }
+        };
+
+        window.highlightLineFromNode = function(node) {
+            const id = node.id || node.closest('.node')?.id || '';
+            const match = id.match(/flowchart-(.+?)-(\\d+)/) || id.match(/(.+?)-(\\d+)/);
+            const nodeId = match ? match[1] : id.replace('flowchart-', '').split('-')[0];
+            
+            if (!nodeId) return;
+            let lineNumber = null;
+            for (const [line, id] of Object.entries(lineMapping)) {
+                if (id === nodeId) { lineNumber = parseInt(line); break; }
+            }
+            if (lineNumber === null) return;
+            window.highlightNodeFromLine(lineNumber);
+        };
+
+            function focusOnElement(node) {
+                if (!panZoom) return;
+                const nodeRect = node.getBoundingClientRect();
+                const containerRect = document.getElementById('graphDiv').getBoundingClientRect();
+                const safeZoneH = containerRect.height * 0.3; 
+                const safeZoneW = containerRect.width * 0.3;  
+                const centerX = containerRect.left + containerRect.width / 2;
+                const centerY = containerRect.top + containerRect.height / 2;
+                const nodeCenterX = nodeRect.left + nodeRect.width / 2;
+                const nodeCenterY = nodeRect.top + nodeRect.height / 2;
+
+                if (Math.abs(nodeCenterX - centerX) < safeZoneW && Math.abs(nodeCenterY - centerY) < safeZoneH) {
+                    savedPan = panZoom.getPan(); isUserPanning = true; return; 
+                }
+                const diffX = centerX - nodeCenterX;
+                const diffY = centerY - nodeCenterY;
+                const currentPan = panZoom.getPan();
+                const targetPan = { x: currentPan.x + diffX, y: currentPan.y + diffY };
+                animatePan(currentPan, targetPan, 300);
+            }
+
+            function animatePan(start, end, duration) {
+                const startTime = performance.now();
+
+                function step(currentTime) {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    // פונקציית Ease-Out לתנועה טבעית
+                    const ease = 1 - Math.pow(1 - progress, 3);
+
+                    const newX = start.x + (end.x - start.x) * ease;
+                    const newY = start.y + (end.y - start.y) * ease;
+
+                    panZoom.pan({x: newX, y: newY});
+
+                    if (progress < 1) {
+                        requestAnimationFrame(step);
+                    } else {
+                        savedPan = panZoom.getPan();
+                        isUserPanning = true;
+                    }
+                }
+                
+                requestAnimationFrame(step);
+            }
+    </script>
+</body>
+</html>`;
     
     const dir = path.dirname(document.fileName);
-    const mdPath = path.join(dir, 'flowchart.md');
+    const htmlPath = path.join(dir, 'flowchart.html');
     
-    fs.writeFile(mdPath, mdContent, err => {
-        if (err) {
-            console.error('Error saving flowchart.md:', err);
-        }
+    fs.writeFile(htmlPath, htmlContent, err => {
+        if (err) console.error('Error saving flowchart.html:', err);
     });
 }
 
@@ -141,39 +391,61 @@ function getWebviewContent() {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+        
         <style>
-            body { margin: 0; padding: 0; overflow: hidden; background-color: #f1f1f1ff; font-family: sans-serif; }
+            /* שימוש ב-vars של VS Code */
+            body { 
+                margin: 0; padding: 0; overflow: hidden; 
+                background-color: var(--vscode-editor-background); 
+                color: var(--vscode-editor-foreground);
+                font-family: 'Heboo', sans-serif; 
+            }
             #container { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
             
             #controls { 
-                padding: 3px; background: #f1f1f1ff; display: flex; gap: 10px; border-bottom: 1px dotted #000000ff; 
+                padding: 3px; 
+                background: var(--vscode-editor-background); 
+                display: flex; gap: 10px; 
+                border-bottom: 1px dotted var(--vscode-editorGroup-border); 
                 align-items: center;
+                position: relative;
+                z-index: 10;
             }
             
             button { 
-                background: #94b4ebff; color: #1d1d1dff; border: none; padding: 6px 12px; 
+                background: var(--vscode-button-background); 
+                color: var(--vscode-button-foreground); 
+                border: none; padding: 6px 12px; 
                 cursor: pointer; border-radius: 2px; font-size: 12px; font-weight: bold; 
                 transition: background 0.2s;
             }
-            button:hover { background: #82d4f1ff; }
+            button:hover { background: var(--vscode-button-hoverBackground); }
             
             #graphDiv { 
-                flex: 1; overflow: hidden; background-color: white; position: relative; 
+                flex: 1; overflow: hidden; 
+                background-color: var(--vscode-editor-background); 
+                position: relative; 
                 cursor: grab;
                 touch-action: none;
             }
             #graphDiv:active { cursor: grabbing; }
             
+            #statusIndicator {
+                position: absolute; bottom: 10px; right: 10px;
+                background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.8));
+                color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px;
+                display: none; pointer-events: none; z-index: 100;
+            }
+
             .node { cursor: pointer !important; }
-            .hint { color: #0f0f0fff; font-size: 11px; margin-left: auto; }
+            #mermaidSvg .cluster rect {rx: 20px !important; ry: 20px !important; stroke:#fff !important;}
             
-            .highlight-node rect, .highlight-node circle, .highlight-node polygon {
-                fill: #f1fffdff !important;
-                stroke: #0667b6ff !important;
+            /* Highlighting */
+            .highlight-node rect, .highlight-node circle, .highlight-node polygon, .highlight-node path {
+                stroke: var(--vscode-textLink-foreground) !important;
                 stroke-width: 2px !important;
-                filter: drop-shadow(0 0 10px rgba(30, 140, 230, 0.32));
+                filter: drop-shadow(0 0 4px var(--vscode-textLink-activeForeground));
                 transition: all 0.3s ease-out;
             }
         </style>
@@ -183,14 +455,18 @@ function getWebviewContent() {
             <div id="controls">
                 <button onclick="exportSVG()">Save SVG</button>
                 <button onclick="resetZoom()">Recenter</button>
-                <div class="hint">Click graph to Jump | Click code to Focus</div>
+                <div class="hint" style="margin-left: auto; font-size: 11px; opacity: 0.7;">Click graph to Jump | Click code to Focus</div>
             </div>
-            <div id="graphDiv" class="mermaid">
-                graph TD; Init;
-            </div>
+            <div id="graphDiv" class="mermaid"></div>
+            <div id="statusIndicator">Syncing...</div>
         </div>
 
-        <script>
+        <script type="module">
+            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.12.2/dist/mermaid.esm.min.mjs';
+            import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs';
+
+            mermaid.registerLayoutLoaders(elkLayouts);
+
             const vscode = acquireVsCodeApi();
 
             let savedZoom = null;
@@ -198,18 +474,27 @@ function getWebviewContent() {
             let panZoom = null;
             let isUserPanning = false;
 
+            // זיהוי Theme
+            const isDark = document.body.classList.contains('vscode-dark');
+            
+            // הגדרת משתני Theme לפי הבקשה הספציפית ל-Light
+            const themeVars = {
+                // אם ב-Dark Mode - נשתמש בצבעים כהים
+                // אם ב-Light Mode - נשתמש בצבעים מ-code_chart.md
+                
+                primaryColor: isDark ? '#252526' : '#fefefe',
+                primaryTextColor: isDark ? '#ffffff' : '#2b2b2f',
+                primaryBorderColor: isDark ? '#ffffff' : '#000000',
+                lineColor: isDark ? '#cccccc' : '#2b2b2f',
+                secondaryColor: isDark ? '#1e1e1e' : '#ffffff',
+                tertiaryColor: isDark ? '#1e1e1e' : '#ffffff'
+            };
+
             mermaid.initialize({ 
-                startOnLoad: true, 
+                startOnLoad: false, 
                 theme: 'base',
                 securityLevel: 'loose',
-                themeVariables: {
-                    primaryColor: '#ffffff',
-                    primaryTextColor: '#000000',
-                    primaryBorderColor: '#000000',
-                    lineColor: '#000000',
-                    secondaryColor: '#ffffff',
-                    tertiaryColor: '#ffffff'
-                }
+                themeVariables: themeVars
             });
 
             document.getElementById('graphDiv').addEventListener('click', function(e) {
@@ -252,69 +537,95 @@ function getWebviewContent() {
                 }
             });
 
-            async function renderGraph(syntax) {
+            window.renderGraph = async function(syntax) {
                 const element = document.getElementById('graphDiv');
-                if (panZoom) {
-                    savedZoom = panZoom.getZoom();
-                    savedPan = panZoom.getPan();
-                    panZoom.destroy();
-                    panZoom = null;
-                }
+                const statusEl = document.getElementById('statusIndicator');
+                
                 try {
                     const { svg, bindFunctions } = await mermaid.render('mermaidSvg', syntax);
+                    
+                    let oldZoom = null;
+                    let oldPan = null;
+                    if (panZoom) {
+                        try {
+                            oldZoom = panZoom.getZoom();
+                            oldPan = panZoom.getPan();
+                            panZoom.destroy();
+                        } catch(e) {}
+                        panZoom = null;
+                    }
+
                     element.innerHTML = svg;
-                    if(bindFunctions) bindFunctions(element);
+                    statusEl.style.display = 'none';
+
+                    if (bindFunctions) {
+                        bindFunctions(element);
+                    }
 
                     const svgElement = element.querySelector('svg');
-                    if(svgElement) {
+                    if (svgElement) {
                         svgElement.style.height = "100%";
                         svgElement.style.width = "100%";
                         svgElement.style.maxWidth = "none";
                         
-                        panZoom = svgPanZoom(svgElement, { 
-                            zoomEnabled: true, controlIconsEnabled: false, fit: true, center: true, minZoom: 0.1, maxZoom: 10,
-                            onPan: function() { isUserPanning = true; }
-                        });
+                        const bbox = svgElement.getBBox();
+                        if (bbox.width > 0 && bbox.height > 0) {
+                            panZoom = svgPanZoom(svgElement, { 
+                                zoomEnabled: true, controlIconsEnabled: false, fit: true, center: true, minZoom: 0.1, maxZoom: 10,
+                                onPan: function() { isUserPanning = true; }
+                            });
 
-                        if (savedZoom !== null && savedPan !== null) {
-                            panZoom.zoom(savedZoom);
-                            panZoom.pan(savedPan);
-                        } else {
-                            isUserPanning = false; 
+                            if (oldZoom !== null && oldPan !== null) {
+                                panZoom.zoom(oldZoom);
+                                panZoom.pan(oldPan);
+                            }
                         }
                     }
-                } catch(e) { console.error(e); }
+                } catch(e) { 
+                     console.warn('Render skipped:', e.message);
+                     statusEl.textContent = "Updating...";
+                     statusEl.style.display = 'block';
+                }
+            };
+            
+            window.exportSVG = function() {
+                const svgEl = document.querySelector('#graphDiv svg');
+                if (!svgEl) return;
+                let contentG = svgEl.querySelector('.svg-pan-zoom_viewport');
+                if (!contentG) contentG = svgEl.querySelector('g'); 
+                const bbox = contentG.getBBox();
+                const clone = svgEl.cloneNode(true);
+                clone.removeAttribute('style'); clone.removeAttribute('width'); clone.removeAttribute('height');
+                const padding = 20;
+                const viewBox = \`\${bbox.x - padding} \${bbox.y - padding} \${bbox.width + (padding*2)} \${bbox.height + (padding*2)}\`;
+                clone.setAttribute('viewBox', viewBox);
+                const cloneViewport = clone.querySelector('.svg-pan-zoom_viewport');
+                if (cloneViewport) { cloneViewport.removeAttribute('transform'); cloneViewport.removeAttribute('style'); }
+                vscode.postMessage({ command: 'saveSVG', text: clone.outerHTML });
+            }
+            
+            window.resetZoom = function() {
+                if(panZoom) { panZoom.resetZoom(); panZoom.center(); isUserPanning = false; }
             }
 
             function focusOnElement(node) {
                 if (!panZoom) return;
-
                 const nodeRect = node.getBoundingClientRect();
                 const containerRect = document.getElementById('graphDiv').getBoundingClientRect();
-
-                // אזור מת (Dead Zone): אם האלמנט במרכז (30% מהמסך), לא מזיזים
                 const safeZoneH = containerRect.height * 0.3; 
                 const safeZoneW = containerRect.width * 0.3;  
-                
                 const centerX = containerRect.left + containerRect.width / 2;
                 const centerY = containerRect.top + containerRect.height / 2;
-                
                 const nodeCenterX = nodeRect.left + nodeRect.width / 2;
                 const nodeCenterY = nodeRect.top + nodeRect.height / 2;
 
-                if (Math.abs(nodeCenterX - centerX) < safeZoneW && 
-                    Math.abs(nodeCenterY - centerY) < safeZoneH) {
-                    savedPan = panZoom.getPan();
-                    isUserPanning = true;
-                    return; // אין צורך להזיז
+                if (Math.abs(nodeCenterX - centerX) < safeZoneW && Math.abs(nodeCenterY - centerY) < safeZoneH) {
+                    savedPan = panZoom.getPan(); isUserPanning = true; return; 
                 }
-
                 const diffX = centerX - nodeCenterX;
                 const diffY = centerY - nodeCenterY;
                 const currentPan = panZoom.getPan();
                 const targetPan = { x: currentPan.x + diffX, y: currentPan.y + diffY };
-
-                // הפעלת אנימציה במקום קפיצה
                 animatePan(currentPan, targetPan, 300);
             }
 
@@ -341,26 +652,6 @@ function getWebviewContent() {
                 }
                 
                 requestAnimationFrame(step);
-            }
-
-            function exportSVG() {
-                const svgEl = document.querySelector('#graphDiv svg');
-                if (!svgEl) return;
-                let contentG = svgEl.querySelector('.svg-pan-zoom_viewport');
-                if (!contentG) contentG = svgEl.querySelector('g'); 
-                const bbox = contentG.getBBox();
-                const clone = svgEl.cloneNode(true);
-                clone.removeAttribute('style'); clone.removeAttribute('width'); clone.removeAttribute('height');
-                const padding = 20;
-                const viewBox = \`\${bbox.x - padding} \${bbox.y - padding} \${bbox.width + (padding*2)} \${bbox.height + (padding*2)}\`;
-                clone.setAttribute('viewBox', viewBox);
-                const cloneViewport = clone.querySelector('.svg-pan-zoom_viewport');
-                if (cloneViewport) { cloneViewport.removeAttribute('transform'); cloneViewport.removeAttribute('style'); }
-                vscode.postMessage({ command: 'saveSVG', text: clone.outerHTML });
-            }
-            
-            function resetZoom() {
-                if(panZoom) { panZoom.resetZoom(); panZoom.center(); isUserPanning = false; }
             }
         </script>
     </body>
