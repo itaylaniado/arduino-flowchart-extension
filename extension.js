@@ -53,7 +53,7 @@ async function activate(context) {
         if (currentPanel && event.document === vscode.window.activeTextEditor?.document) {
             updateGraph();
         }
-    }, 600); 
+    }, 2600); 
 
     vscode.workspace.onDidChangeTextDocument(debouncedUpdate, null, context.subscriptions);
 
@@ -439,7 +439,7 @@ function getWebviewContent() {
             }
 
             .node { cursor: pointer !important; }
-            #mermaidSvg .cluster rect {rx: 20px !important; ry: 20px !important; stroke:#fff !important;}
+            #mermaidSvg .cluster rect {rx: 20px !important; ry: 20px !important; fill:#ebebec; stroke:#fff !important;}
             
             /* Highlighting */
             .highlight-node rect, .highlight-node circle, .highlight-node polygon, .highlight-node path {
@@ -486,8 +486,8 @@ function getWebviewContent() {
                 primaryTextColor: isDark ? '#ffffff' : '#2b2b2f',
                 primaryBorderColor: isDark ? '#ffffff' : '#000000',
                 lineColor: isDark ? '#cccccc' : '#2b2b2f',
-                secondaryColor: isDark ? '#1e1e1e' : '#ffffff',
-                tertiaryColor: isDark ? '#1e1e1e' : '#ffffff'
+                secondaryColor: isDark ? '#1e1e1e80' : '#e5e5e580',
+                tertiaryColor: isDark ? '#1e1e1e80' : '#e5e5e580'
             };
 
             mermaid.initialize({ 

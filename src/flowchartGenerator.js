@@ -165,6 +165,10 @@ function generateMermaidCode(code) {
                     graph += `${prev} -->${edge} ${id}\n`;
                 });
 
+                if (context.breaks) {
+                    context.breaks.push(id);
+                }
+
                 return []; 
             }
 
@@ -211,7 +215,8 @@ function generateMermaidCode(code) {
                     graph += `${entryId} --> ${condId}\n`;
                 }
                 
-                const bodyEnds = processBlock(bodyNode, [condId], "True", context);
+                const loopContext = { ...context, breaks: [] };
+                const bodyEnds = processBlock(bodyNode, [condId], "True", loopContext);
 
                 let updateEnds = bodyEnds;
                 if (bodyEnds.length > 0) {
@@ -227,7 +232,7 @@ function generateMermaidCode(code) {
 
                 graph += `end\n`; 
 
-                return [condId];
+                return [condId, ...loopContext.breaks];
             }
 
             // --- While Loop (שוחזר) ---
@@ -246,13 +251,14 @@ function generateMermaidCode(code) {
                     graph += `${prev} -->${edge} ${condId}\n`;
                 });
                 
-                const bodyEnds = processBlock(bodyNode, [condId], "True", context);
+                const loopContext = { ...context, breaks: [] };
+                const bodyEnds = processBlock(bodyNode, [condId], "True", loopContext);
                 
                 if (bodyEnds.length > 0) {
                     bodyEnds.forEach(end => graph += `${end} --> ${condId}\n`);
                 }
                 
-                return [condId]; 
+                return [condId, ...loopContext.breaks]; 
             }
 
             // --- If Statement (שוחזר) ---
@@ -276,6 +282,106 @@ function generateMermaidCode(code) {
                 const elseEnds = elseNode ? processBlock(elseNode, [ifId], "No", context) : [ifId];
                 
                 return [...thenEnds, ...elseEnds];
+            }
+
+            // --- Switch Statement ---
+            if (node.type === 'switch_statement') {
+                const condNode = node.child(1);
+                const bodyNode = node.child(2);
+                const switchId = `N${condNode.id}`;
+                const customLabel = getLabel(node, "");
+                const label = (customLabel && !customLabel.includes("switch")) ? customLabel : sanitize(condNode.text);
+
+                graph += `${switchId}{"${label}?"}\n`;
+                registerMapping(switchId, startLine);
+
+                incomingIds.forEach(prev => {
+                    const edge = edgeLabel ? `|${edgeLabel}|` : '';
+                    graph += `${prev} -->${edge} ${switchId}\n`;
+                });
+
+                let switchEnds = [];
+                let hasDefault = false;
+                let previousCaseEnds = [];
+                
+                const switchContext = { ...context, breaks: [] };
+
+                if (bodyNode.type === 'compound_statement') {
+                    for (let i = 0; i < bodyNode.childCount; i++) {
+                        const child = bodyNode.child(i);
+                        
+                        if (child.type === 'case_statement') {
+                            let caseLabel = "case";
+                            if (child.childCount > 1) {
+                                const valNode = child.child(1);
+                                if (valNode.type !== ':') {
+                                     caseLabel = sanitize(valNode.text);
+                                }
+                            }
+                            
+                            const caseId = `N${child.id}`;
+                            const caseText = `case ${caseLabel}`;
+                            graph += `${caseId}["${caseText}"]\n`;
+                            registerMapping(caseId, child.startPosition.row);
+                            
+                            graph += `${switchId} --> ${caseId}\n`;
+                            
+                            previousCaseEnds.forEach(prev => {
+                                graph += `${prev} --> ${caseId}\n`;
+                            });
+                            
+                            const caseEnds = processBlock(child, [caseId], null, switchContext);
+                            previousCaseEnds = caseEnds;
+                            
+                        } else if (child.type === 'default_statement') {
+                            hasDefault = true;
+                            const defaultId = `N${child.id}`;
+                            graph += `${defaultId}["default"]\n`;
+                            registerMapping(defaultId, child.startPosition.row);
+                            
+                            graph += `${switchId} --> ${defaultId}\n`;
+                            previousCaseEnds.forEach(prev => graph += `${prev} --> ${defaultId}\n`);
+                            
+                            const defaultEnds = processBlock(child, [defaultId], null, switchContext);
+                            previousCaseEnds = defaultEnds;
+                        }
+                    }
+                }
+                
+                switchEnds.push(...previousCaseEnds);
+                
+                if (!hasDefault) {
+                    switchEnds.push(switchId); 
+                }
+                
+                switchEnds.push(...switchContext.breaks);
+
+                return switchEnds;
+            }
+
+            // --- Case / Default Statement ---
+            if (node.type === 'case_statement' || node.type === 'default_statement') {
+                let currentIds = incomingIds;
+                let nextEdgeLabel = edgeLabel;
+                let startProcessing = false;
+
+                for (let i = 0; i < node.childCount; i++) {
+                    const child = node.child(i);
+                    if (child.type === ':') {
+                        startProcessing = true;
+                        continue;
+                    }
+                    if (!startProcessing) continue;
+                    
+                    if (['{', '}', ';', 'comment'].includes(child.type)) continue;
+                    
+                    if (currentIds.length === 0) break;
+
+                    const nextIds = processBlock(child, currentIds, nextEdgeLabel, context);
+                    currentIds = nextIds;
+                    nextEdgeLabel = null; 
+                }
+                return currentIds;
             }
 
             // --- Generic Statement / Function Call ---
